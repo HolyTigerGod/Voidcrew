@@ -2,5 +2,13 @@
 #To make use of this file by default, run 'git config blame.ignoreRevsFile .git-blame-ignore-revs'
 #in the project folder
 
+## Line ending conversions
+
 # Force LF line endings with gitattributes and convert repo
 835f137de6aea88beddca584b979670bb813bbe1
+# Line ending apocalypse
+513a3b706a53f7c6984e97124ccd00948725e27b
+# Initial pass to convert LF to CRLF
+8af8a43d6f27e342e79d4aacb22b7668cbdc8559
+# Many changes
+931da9e7ef8c0f52a768eed7998e7e62ccdefcdc
