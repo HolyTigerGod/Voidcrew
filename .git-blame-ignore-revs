@@ -12,3 +12,5 @@
 8af8a43d6f27e342e79d4aacb22b7668cbdc8559
 # Many changes
 931da9e7ef8c0f52a768eed7998e7e62ccdefcdc
+# Remove hideous inline tab indentation, and bans it in contributing guidelines
+1c4aef1ac1f0747fa3b75125613b2a88f1c97c12
