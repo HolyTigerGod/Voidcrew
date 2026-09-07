@@ -1,7 +1,6 @@
 ## Voidcrew Reborn Codebase
 
-A hobby project
-by Jackrip
+A hobby project, by Jackrip. [/tg/station space station 13 fork](https://tgstation13.org/)
 
 | Website             | Link                                                                                                 |
 | ------------------- | ---------------------------------------------------------------------------------------------------- |
