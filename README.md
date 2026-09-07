@@ -1,6 +1,6 @@
 ## Voidcrew Reborn Codebase
 
-A ship-based hobby project and fork of /tg/station
+A hobby project
 by Jackrip
 
 | Website             | Link                                                                                                 |
