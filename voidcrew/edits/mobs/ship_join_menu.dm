@@ -178,6 +178,9 @@
 			if(QDELETED(ship))
 				to_chat(user, span_warning("That ship is no longer available."))
 				return FALSE
+			if(ship_has_open_slots(ship))
+				to_chat(user, span_warning("This crew still has open job slots."))
+				return FALSE
 			var/wait_time = ping_wait(ship)
 			if(wait_time > 0)
 				to_chat(user, span_warning("You can ping this crew again in [DisplayTimeText(wait_time)]."))

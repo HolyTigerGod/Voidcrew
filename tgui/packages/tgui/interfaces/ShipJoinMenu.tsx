@@ -385,11 +385,13 @@ const ShipCard = (props: { ship: ActiveShip }) => {
               <Button
                 fluid
                 icon="bell"
-                disabled={ship.ping_cooldown > 0}
+                disabled={totalSlots > 0 || ship.ping_cooldown > 0}
                 tooltip={
-                  ship.ping_cooldown > 0
-                    ? 'Please wait before pinging this crew again'
-                    : 'Ask the crew to open a job slot'
+                  totalSlots > 0
+                    ? 'This crew still has open job slots'
+                    : ship.ping_cooldown > 0
+                      ? 'Please wait before pinging this crew again'
+                      : 'Ask the crew to open a job slot'
                 }
                 onClick={() => act('ping_ship', { ship_ref: ship.ref })}
               >
