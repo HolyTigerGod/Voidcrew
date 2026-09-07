@@ -1,5 +1,5 @@
 /datum/biome/wasteland
-	open_turf_types = list(/turf/open/misc/wasteland/lit = 1)
+	open_turf_types = list(/turf/open/misc/wasteland = 1)
 	flora_spawn_list = list(
 		/obj/structure/flora/rock/asteroid = 30,
 		/obj/structure/flora/tree/dead/tall = 10,
@@ -30,15 +30,21 @@
 		/mob/living/basic/spider/giant/tarantula/wasteland = 1,
 		/mob/living/basic/mining/legion/wasteland = 3
 	)
+	// Meaner tier for dangerous-zone planets (see dangerous_mob_spawn_list)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/legion/wasteland = 3,
+		/mob/living/basic/spider/giant/tarantula/wasteland = 2,
+		/mob/living/basic/spider/giant/wasteland = 2,
+	)
 
 /datum/biome/wasteland/plains
-	open_turf_types = list(/turf/open/misc/dust/lit = 1)
+	open_turf_types = list(/turf/open/misc/dust = 1)
 	flora_spawn_list = list(/obj/structure/flora/deadgrass/tall = 50, /obj/structure/flora/deadgrass/tall/dense = 5, /obj/structure/flora/rock/wasteland = 1)
 	flora_spawn_chance = 45
 	mob_spawn_chance = 15
 
 /datum/biome/wasteland/forest
-	open_turf_types = list(/turf/open/misc/dirt/dry/lit = 1)
+	open_turf_types = list(/turf/open/misc/dirt/dry = 1)
 	flora_spawn_list = list(
 		/obj/structure/flora/tree/dead/tall = 35,
 		/obj/structure/flora/branches = 10,
@@ -48,8 +54,30 @@
 	)
 	flora_spawn_chance = 25
 
+/**
+ * Fallout zone. This is the only biome that seeds /obj/structure/radioactive, so it
+ * is the only part of a wasteland that will irradiate someone for standing in it.
+ * Its ground lights itself green (see /turf/open/misc/asteroid/sand/lit/nuclear) so
+ * the zone is identifiable from outside it - the surrounding wasteland biomes light
+ * neutral, and the boundary between them is the warning.
+ *
+ * These are the only planet surface turfs that still carry their own light source.
+ * Every other biome dropped its /lit turfs for one area-wide ambient light
+ * (see /area/overmap_encounter/planetoid/wasteland); the fallout green is a hazard
+ * telegraph rather than daylight, so it has to stay on the ground that is dangerous
+ * and nowhere else. It now reads as green added on top of the neutral ambient
+ * instead of green replacing it, so the boundary is softer than it used to be.
+ *
+ * Surface areas are dynamic - their ground carries no lighting objects at all - so these
+ * tiles are also the one kind of surface ground that still gets one, on the strength of
+ * lighting itself. /turf/proc/skips_lighting_object() is the rule, and every place that
+ * builds a lighting object honours it. A contaminated blob therefore renders green tile by
+ * tile; what it no longer does is spill green a couple of tiles into the clean wasteland
+ * around it, because that ground has nothing to render the spill on. The boundary is a
+ * step again rather than a fade, which is arguably the better telegraph.
+ */
 /datum/biome/nuclear
-	open_turf_types = list(/turf/open/misc/asteroid/sand/lit = 5, /turf/open/misc/asteroid/sand/dark/lit = 1)
+	open_turf_types = list(/turf/open/misc/asteroid/sand/lit/nuclear = 5, /turf/open/misc/asteroid/sand/dark/lit/nuclear = 1)
 	feature_spawn_chance = 2.5
 	feature_spawn_list = list(
 		/obj/structure/radioactive = 10,
@@ -70,9 +98,13 @@
 		/mob/living/basic/spider/giant/wasteland = 1,
 		/mob/living/basic/spider/giant/tarantula/wasteland = 1
 	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/hivebot/rapid/wasteland = 3,
+		/mob/living/basic/spider/giant/tarantula/wasteland = 1,
+	)
 
 /datum/biome/ruins
-	open_turf_types = list(/turf/open/misc/dust/lit = 45, /turf/open/floor/plating/rust = 1)
+	open_turf_types = list(/turf/open/misc/dust = 45, /turf/open/floor/plating/rust = 1)
 	feature_spawn_chance = 5
 	feature_spawn_list = list(
 		/obj/structure/barrel/flaming = 6,
@@ -98,6 +130,10 @@
 		/mob/living/basic/mining/legion/crystal/wasteland = 1,
 		/mob/living/basic/mining/watcher/forgotten/wasteland = 1
 	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/legion/crystal/wasteland = 1,
+		/mob/living/basic/mining/watcher/forgotten/wasteland = 1,
+	)
 
 /datum/biome/cave/wasteland
 	open_turf_types = list(/turf/open/misc/dirt/dry = 1, /turf/open/misc/dust = 1)
@@ -108,6 +144,10 @@
 		/mob/living/basic/mining/wolf/wasteland/random = 15,
 		/obj/structure/spawner/ice_moon/demonic_portal/blobspore = 1,
 		/obj/structure/spawner/ice_moon/demonic_portal/hivebot = 1
+	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/goliath/wasteland = 3,
+		/mob/living/basic/mining/goliath/ancient/wasteland = 1,
 	)
 	flora_spawn_chance = 10
 	flora_spawn_list = list(
@@ -165,8 +205,20 @@
 		/obj/structure/spawner/ice_moon/demonic_portal/hivebot = 1
 	)
 
+/**
+ * The one wasteland cave biome that never declared its own walls, so it inherited
+ * /datum/biome/cave's lavaland default. Those walls mine into
+ * /turf/open/misc/asteroid/basalt/lava_land_surface: LAVALAND_DEFAULT_ATMOS is
+ * rolled between 30 and 49 kPa, always under WARNING_LOW_PRESSURE, and the turf is
+ * planetary, so every tile mined here read as depressurized forever and fought the
+ * surrounding 101 kPa ground for air. It also mined poorly (the volcanic wall is
+ * proximity_based with mineralChance 5, and a planet has no vents when its terrain
+ * generates) and it sat on a lava baseturf, so anything that broke the new floor
+ * opened a lava tile on a wasteland.
+ */
 /datum/biome/cave/mossy_stone
 	open_turf_types = list(/turf/open/floor/plating/mossy_stone = 5, /turf/open/misc/dirt/dry = 1)
+	closed_turf_types = list(/turf/closed/mineral/random/high_chance/wasteland = 1)
 	feature_spawn_list = list(
 		/obj/effect/decal/cleanable/greenglow = 30,
 		/obj/machinery/portable_atmospherics/canister/plasma = 15,

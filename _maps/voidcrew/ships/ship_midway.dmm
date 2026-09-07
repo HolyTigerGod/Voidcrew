@@ -4,6 +4,18 @@
 /obj/machinery/suit_storage_unit/atmos,
 /turf/open/floor/plating,
 /area/shuttle/voidcrew/midway/engineering/storage)
+"ab" = (
+/obj/effect/landmark/event_spawn,
+/obj/effect/decal/cleanable/dirt/dust,
+/obj/effect/decal/cleanable/blood,
+/turf/open/floor/iron,
+/area/shuttle/voidcrew/midway/hallway)
+"ac" = (
+/obj/effect/landmark/event_spawn,
+/obj/effect/decal/cleanable/dirt/dust,
+/obj/effect/turf_decal/tile/blue/anticorner,
+/turf/open/floor/iron,
+/area/shuttle/voidcrew/midway/bridge)
 "ao" = (
 /obj/structure/cable,
 /obj/machinery/power/shuttle_engine/ship/electric{
@@ -75,6 +87,11 @@
 	dir = 8
 	},
 /obj/machinery/atmospherics/components/unary/vent_pump/on/layer4,
+/turf/open/floor/iron,
+/area/shuttle/voidcrew/midway/atmospherics)
+"ci" = (
+/obj/structure/window/reinforced/plasma/spawner/directional/north,
+/obj/machinery/atmospherics/pipe/smart/simple/cyan/visible,
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/atmospherics)
 "cl" = (
@@ -164,7 +181,7 @@
 "fD" = (
 /obj/structure/window/reinforced/plasma/spawner/directional/east,
 /obj/structure/window/reinforced/plasma/spawner/directional/north,
-/obj/machinery/atmospherics/components/unary/outlet_injector/on{
+/obj/machinery/atmospherics/components/unary/shuttle/heater/tank{
 	dir = 4
 	},
 /turf/open/floor/plating,
@@ -357,6 +374,7 @@
 	pixel_y = 6
 	},
 /obj/effect/decal/cleanable/dirt/dust,
+/obj/machinery/atmospherics/pipe/smart/manifold4w/supply/hidden/layer4,
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/dorms)
 "ly" = (
@@ -425,19 +443,6 @@
 /obj/machinery/atmospherics/pipe/smart/simple/cyan/visible{
 	dir = 9
 	},
-/turf/open/floor/iron,
-/area/shuttle/voidcrew/midway/atmospherics)
-"pj" = (
-/obj/structure/window/reinforced/plasma/spawner/directional/north,
-/obj/machinery/atmospherics/pipe/bridge_pipe/scrubbers,
-/obj/machinery/atmospherics/pipe/smart/simple/cyan/visible{
-	dir = 8
-	},
-/turf/open/floor/iron,
-/area/shuttle/voidcrew/midway/atmospherics)
-"pl" = (
-/obj/structure/window/reinforced/plasma/spawner/directional/north,
-/obj/machinery/atmospherics/pipe/bridge_pipe/scrubbers,
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/atmospherics)
 "pm" = (
@@ -629,11 +634,6 @@
 	},
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/hallway)
-"ud" = (
-/obj/effect/decal/cleanable/dirt/dust,
-/obj/effect/decal/cleanable/blood,
-/turf/open/floor/iron,
-/area/shuttle/voidcrew/midway/hallway)
 "uX" = (
 /obj/structure/mop_bucket/janitorialcart,
 /turf/open/floor/plating,
@@ -737,6 +737,7 @@
 /obj/structure/chair{
 	dir = 4
 	},
+/obj/machinery/atmospherics/pipe/smart/manifold4w/supply/hidden/layer4,
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/dorms)
 "yq" = (
@@ -1063,6 +1064,14 @@
 /area/shuttle/voidcrew/midway/engineering/storage)
 "KS" = (
 /obj/machinery/atmospherics/pipe/smart/manifold4w/supply/visible,
+/turf/open/floor/iron,
+/area/shuttle/voidcrew/midway/atmospherics)
+"KX" = (
+/obj/structure/window/reinforced/plasma/spawner/directional/north,
+/obj/machinery/atmospherics/pipe/bridge_pipe/scrubbers,
+/obj/machinery/atmospherics/pipe/bridge_pipe/cyan/visible{
+	dir = 4
+	},
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/atmospherics)
 "Lg" = (
@@ -1404,7 +1413,7 @@
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/dorms)
 "Ta" = (
-/obj/machinery/atmospherics/components/unary/vent_pump/on{
+/obj/machinery/atmospherics/components/unary/vent_pump/on/layer4{
 	dir = 4
 	},
 /obj/effect/decal/cleanable/dirt/dust,
@@ -1520,7 +1529,7 @@
 "Wy" = (
 /obj/structure/window/reinforced/plasma/spawner/directional/east,
 /obj/structure/window/reinforced/plasma/spawner,
-/obj/machinery/atmospherics/components/unary/outlet_injector/on{
+/obj/machinery/atmospherics/components/unary/shuttle/heater/tank{
 	dir = 4
 	},
 /turf/open/floor/plating,
@@ -1584,11 +1593,6 @@
 "Yj" = (
 /turf/open/floor/iron,
 /area/shuttle/voidcrew/midway/dorms)
-"Yl" = (
-/obj/effect/decal/cleanable/dirt/dust,
-/obj/effect/turf_decal/tile/blue/anticorner,
-/turf/open/floor/iron,
-/area/shuttle/voidcrew/midway/bridge)
 "YG" = (
 /obj/structure/bed,
 /obj/item/bedsheet/brown,
@@ -1905,7 +1909,7 @@ ku
 qr
 Zn
 Td
-ud
+ab
 jk
 Td
 Zn
@@ -1960,7 +1964,7 @@ zv
 mJ
 Er
 JI
-pj
+KX
 gb
 ML
 Ik
@@ -2020,7 +2024,7 @@ zv
 qr
 aF
 lT
-pl
+ci
 IC
 OF
 qd
@@ -2268,7 +2272,7 @@ ri
 CG
 Lg
 OV
-Yl
+ac
 kH
 Zn
 Zn

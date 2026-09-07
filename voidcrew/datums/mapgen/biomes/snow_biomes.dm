@@ -1,6 +1,6 @@
 
 /datum/biome/snow
-	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable/lit = 25)
+	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable = 25)
 	flora_spawn_list = list(
 		/obj/structure/flora/tree/pine = 2,
 		/obj/structure/flora/rock/icy = 2,
@@ -10,15 +10,22 @@
 	)
 	flora_spawn_chance = 10
 	mob_spawn_chance = 1
+	// Pine forests belong to the packs: wolves and bears, with legions in the treeline.
 	mob_spawn_list = list(
-		/mob/living/basic/mining/wolf/random = 30,
+		/mob/living/basic/mining/wolf/random = 40,
 		/obj/structure/spawner/ice_moon = 3,
 		/obj/structure/spawner/ice_moon/polarbear = 3,
-		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30,
-		/mob/living/basic/mining/legion/snow = 50,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 35,
+		/mob/living/basic/mining/legion/snow = 20,
 		/mob/living/basic/mining/goldgrub = 10,
-		/mob/living/basic/mining/ice_demon/random = 20,
-		/mob/living/basic/mining/ice_whelp = 20,
+		/mob/living/basic/mining/ice_demon/random = 5,
+		/mob/living/basic/mining/ice_whelp = 5,
+	)
+	// Meaner tier for dangerous-zone planets (see dangerous_mob_spawn_list)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/ice_demon/random = 2,
+		/mob/living/basic/mining/ice_whelp = 2,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 1,
 	)
 	feature_spawn_chance = 0.1
 	feature_spawn_list = list(
@@ -28,14 +35,14 @@
 	)
 
 /datum/biome/snow/lush
-	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable/lit = 25)
+	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable = 25)
 	flora_spawn_list = list(
 		/obj/structure/flora/grass/both = 1,
 	)
 	flora_spawn_chance = 30
 
 /datum/biome/snow/thawed
-	open_turf_types = list(/turf/open/misc/dirt/snow/lit = 1)
+	open_turf_types = list(/turf/open/misc/dirt/snow = 1)
 	flora_spawn_chance = 40
 	flora_spawn_list = list(
 		/obj/structure/flora/ausbushes/fullgrass = 1,
@@ -77,20 +84,26 @@
 	)
 
 /datum/biome/arctic
-	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable/lit = 1)
+	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable = 1)
 	feature_spawn_chance = 0.1
 	feature_spawn_list = list(/obj/structure/statue/snow/snowman = 3, /obj/structure/statue/snow/snowlegion = 1)
+	// Open windswept flats are legion country. The snowmen aren't all statues.
 	mob_spawn_list = list(
-		/mob/living/basic/mining/wolf/random = 30,
+		/mob/living/basic/mining/wolf/random = 15,
 		/obj/structure/spawner/ice_moon = 3,
 		/obj/structure/spawner/ice_moon/polarbear = 3,
-		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30,
-		/mob/living/basic/mining/legion/snow = 50,
-		/mob/living/basic/mining/goldgrub = 10,
-		/mob/living/basic/mining/ice_demon/random = 15,
-		/mob/living/basic/mining/ice_whelp = 15,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 15,
+		/mob/living/basic/mining/legion/snow = 45,
+		/mob/living/basic/mining/goldgrub = 15,
+		/mob/living/basic/mining/ice_demon/random = 10,
+		/mob/living/basic/mining/ice_whelp = 10,
 	)
 	mob_spawn_chance = 1
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/ice_demon/random = 2,
+		/mob/living/basic/mining/ice_whelp = 2,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 1,
+	)
 
 /datum/biome/arctic/rocky
 	flora_spawn_chance = 5
@@ -100,15 +113,21 @@
 	)
 
 /datum/biome/icey
-	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable/lit = 5, /turf/open/misc/ice/lit = 1)
+	open_turf_types = list(/turf/open/misc/asteroid/snow/breathable = 5, /turf/open/misc/ice = 1)
 	mob_spawn_chance = 2
+	// Frozen lakes are demon territory; things get worse the further out on the ice you go.
 	mob_spawn_list = list(
-		/mob/living/basic/mining/wolf/random = 30,
-		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30,
-		/mob/living/basic/mining/legion/snow = 50,
+		/mob/living/basic/mining/wolf/random = 10,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 15,
+		/mob/living/basic/mining/legion/snow = 15,
 		/mob/living/basic/mining/goldgrub = 10,
-		/mob/living/basic/mining/ice_demon/random = 15,
-		/mob/living/basic/mining/ice_whelp = 15,
+		/mob/living/basic/mining/ice_demon/random = 30,
+		/mob/living/basic/mining/ice_whelp = 25,
+	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/ice_demon/random = 2,
+		/mob/living/basic/mining/ice_whelp = 2,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 1,
 	)
 	feature_spawn_chance = 0.2
 	feature_spawn_list = list(
@@ -118,7 +137,7 @@
 	)
 
 /datum/biome/icey/lake
-	open_turf_types = list(/turf/open/misc/ice/lit = 1)
+	open_turf_types = list(/turf/open/misc/ice = 1)
 
 // /datum/biome/plasma
 // 	open_turf_types = list(/turf/open/lava/plasma/ice_moon = 5, /turf/open/misc/dirt/jungle/dark = 1)
@@ -138,15 +157,21 @@
 	)
 	closed_turf_types = list(/turf/closed/mineral/random/snow = 1)
 	mob_spawn_chance = 2
+	// Caves shelter dens and burrowers: wolves, bears and goldgrubs.
 	mob_spawn_list = list(
 		/mob/living/basic/mining/wolf/random = 30,
 		/obj/structure/spawner/ice_moon = 3,
 		/obj/structure/spawner/ice_moon/polarbear = 3,
-		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30,
-		/mob/living/basic/mining/legion/snow = 50,
-		/mob/living/basic/mining/goldgrub = 10,
-		/mob/living/basic/mining/ice_demon/random = 15,
-		/mob/living/basic/mining/ice_whelp = 15
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 20,
+		/mob/living/basic/mining/legion/snow = 20,
+		/mob/living/basic/mining/goldgrub = 25,
+		/mob/living/basic/mining/ice_demon/random = 10,
+		/mob/living/basic/mining/ice_whelp = 10
+	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/ice_demon/random = 2,
+		/mob/living/basic/mining/ice_whelp = 2,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 1,
 	)
 	feature_spawn_chance = 0.1
 	feature_spawn_list = list(
@@ -165,15 +190,21 @@
 	open_turf_types = list(/turf/open/misc/asteroid/basalt = 1)
 	closed_turf_types = list(/turf/closed/mineral/random/snow = 1)
 	mob_spawn_chance = 2
+	// Volcanic tunnels draw the heat-hungry: whelps bask, demons hunt them.
 	mob_spawn_list = list(
-		/mob/living/basic/mining/wolf/random = 30,
+		/mob/living/basic/mining/wolf/random = 10,
 		/obj/structure/spawner/ice_moon = 3,
 		/obj/structure/spawner/ice_moon/polarbear = 3,
-		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30,
-		/mob/living/basic/mining/legion/snow = 50,
-		/mob/living/basic/mining/goldgrub = 10,
-		/mob/living/basic/mining/ice_demon/random = 15,
-		/mob/living/basic/mining/ice_whelp = 15,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 10,
+		/mob/living/basic/mining/legion/snow = 15,
+		/mob/living/basic/mining/goldgrub = 15,
+		/mob/living/basic/mining/ice_demon/random = 25,
+		/mob/living/basic/mining/ice_whelp = 35,
+	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/mining/ice_demon/random = 2,
+		/mob/living/basic/mining/ice_whelp = 2,
+		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 1,
 	)
 	flora_spawn_chance = 3
 	flora_spawn_list = list(

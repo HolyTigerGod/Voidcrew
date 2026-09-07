@@ -31,8 +31,11 @@
 	if(mapload && prob(33))
 		MakeDirty()
 
-	if(is_station_level(z))
+	// VOIDCREW EDIT CHANGE: never register ALLOCATOR-DEALT ground - original was
+	// `if(is_station_level(z))`. See the matching comment on /turf/closed/wall/Initialize().
+	if(is_station_level(z) && !map_region_for_turf(src))
 		GLOB.station_turfs += src
+	// VOIDCREW EDIT END
 
 /turf/open/floor/broken_states()
 	return list("damaged1", "damaged2", "damaged3", "damaged4", "damaged5")
@@ -41,8 +44,11 @@
 	return list()
 
 /turf/open/floor/Destroy()
-	if(is_station_level(z))
+	// VOIDCREW EDIT CHANGE: symmetric with the guard in Initialize() - original was
+	// `if(is_station_level(z))`. See /turf/closed/wall/Destroy().
+	if(length(GLOB.station_turfs) && !map_region_for_turf(src))
 		GLOB.station_turfs -= src
+	// VOIDCREW EDIT END
 	return ..()
 
 /turf/open/floor/ex_act(severity, target)
@@ -155,6 +161,14 @@
 	return remove_tile(user, silent)
 
 /turf/open/floor/proc/remove_tile(mob/user, silent = FALSE, make_tile = TRUE, force_plating)
+	// VOIDCREW: taking up tiles with a tool is deliberate remodeling.
+	var/obj/machinery/computer/camera_advanced/base_construction/ship/repair_controller
+	if(user)
+		repair_controller = SSship_repairs.area_controllers[get_area(src)]
+	var/was_repairing = repair_controller?.repair_applying
+	if(repair_controller)
+		repair_controller.forget_repair_record(repair_controller.repair_coordinate_key(src))
+		repair_controller.repair_applying = TRUE
 	if(broken || burnt)
 		broken = FALSE
 		burnt = FALSE
@@ -165,7 +179,9 @@
 			to_chat(user, span_notice("You remove the floor tile."))
 		if(make_tile)
 			spawn_tile()
-	return make_plating(force_plating)
+	. = make_plating(force_plating)
+	if(repair_controller)
+		repair_controller.repair_applying = was_repairing
 
 /turf/open/floor/proc/has_tile()
 	return floor_tile
@@ -283,10 +299,13 @@
 
 			//allow directional windows to be built without grills
 			if(!initial(window_path.fulltile))
-				if(!valid_build_direction(src, user.dir, is_fulltile = FALSE))
+				//not user.dir: a remotely driven RCD builds where its drone is looking, not
+				//where the body credited with the build happens to be pointing
+				var/build_dir = the_rcd.rcd_build_dir(user)
+				if(!valid_build_direction(src, build_dir, is_fulltile = FALSE))
 					balloon_alert(user, "window already here!")
 					return FALSE
-				var/obj/structure/window/WD = new window_path(src, user.dir)
+				var/obj/structure/window/WD = new window_path(src, build_dir)
 				WD.set_anchored(TRUE)
 				return TRUE
 
@@ -300,7 +319,9 @@
 			var/obj/machinery/door/airlock_type = rcd_data["[RCD_DESIGN_PATH]"]
 
 			if(ispath(airlock_type, /obj/machinery/door/window))
-				if(!valid_build_direction(src, user.dir, is_fulltile = FALSE))
+				//see the window branch above - the drone's facing, not the operator's
+				var/build_dir = the_rcd.rcd_build_dir(user)
+				if(!valid_build_direction(src, build_dir, is_fulltile = FALSE))
 					balloon_alert(user, "there's already a windoor!")
 					return FALSE
 				for(var/obj/machinery/door/door in src)
@@ -309,7 +330,7 @@
 					balloon_alert(user, "there's already a door!")
 					return FALSE
 				//create the assembly and let it finish itself
-				var/obj/structure/windoor_assembly/assembly = new (src, user.dir)
+				var/obj/structure/windoor_assembly/assembly = new (src, build_dir)
 				assembly.secure = ispath(airlock_type, /obj/machinery/door/window/brigdoor)
 				assembly.electronics = the_rcd.airlock_electronics.create_copy(assembly)
 				assembly.finish_door()
@@ -352,7 +373,8 @@
 				/obj/structure/bed,
 			)
 			if(is_path_in_list(locate_type, dir_types))
-				design.setDir(user.dir)
+				//see the window branch above - the drone's facing, not the operator's
+				design.setDir(the_rcd.rcd_build_dir(user))
 			return TRUE
 		if(RCD_DECONSTRUCT)
 			if(rcd_proof)

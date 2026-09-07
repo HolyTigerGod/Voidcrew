@@ -1,4 +1,5 @@
 import { Box, Button, Icon, Section, Stack } from 'tgui-core/components';
+import type { BooleanLike } from 'tgui-core/react';
 
 import { useBackend } from '../backend';
 import { Window } from '../layouts';
@@ -13,24 +14,87 @@ type ActiveShip = {
     slots: number;
   }>;
   memo: string | null;
+  locked: BooleanLike;
+  password_cleared: BooleanLike;
+  crew_locked: BooleanLike;
+  applied: BooleanLike;
 };
 
 type ShipJoinMenuData = {
   player_name: string;
   ships: ActiveShip[];
+  outposts: {
+    ref: string;
+    name: string;
+    mode: string;
+    cleared: BooleanLike;
+    residents: number;
+    status: string | null;
+    pods: BooleanLike;
+  }[];
+  can_requisition: BooleanLike;
+  wiki_url: string | null;
 };
 
 export const ShipJoinMenu = () => {
-  const { data } = useBackend<ShipJoinMenuData>();
-  const { player_name, ships } = data;
+  const { act, data } = useBackend<ShipJoinMenuData>();
+  const { player_name, ships, can_requisition, wiki_url } = data;
 
   return (
-    <Window title={`Welcome, ${player_name}`} width={500} height={450}>
-      <Window.Content>
+    <Window
+      title={`Welcome, ${player_name}`}
+      width={500}
+      height={700}
+      buttons={
+        <Button
+          icon="book"
+          disabled={!wiki_url}
+          tooltip={wiki_url ? 'Open the wiki in your browser' : undefined}
+          onClick={() => act('open_wiki')}
+        >
+          Wiki
+        </Button>
+      }
+    >
+      <Window.Content scrollable>
         <Stack vertical fill>
           {/* Purchase Ship Section */}
           <Stack.Item>
             <PurchaseShipSection />
+          </Stack.Item>
+
+          {/* Free Hull Section */}
+          <Stack.Item>
+            <RequisitionSection canRequisition={!!can_requisition} />
+          </Stack.Item>
+
+          <Stack.Item>
+            <Section title="Purchased Outposts: Resident Arrival">
+              {(data.outposts || []).map((home) => (
+                <Box key={home.ref} mb={1}>
+                  <Box bold>{home.name}</Box>
+                  <Box>
+                    {home.residents} active residents | {home.mode} |{' '}
+                    {home.cleared
+                      ? 'Return clearance saved'
+                      : 'No saved clearance'}
+                  </Box>
+                  <Box color="label">
+                    {home.status || 'Resident arrival available'}
+                  </Box>
+                  <Button
+                    disabled={!home.pods || home.mode === 'closed'}
+                    onClick={() => act('join_outpost', { ref: home.ref })}
+                  >
+                    Join as resident
+                  </Button>
+                </Box>
+              ))}
+              <Box color="label">
+                Join an existing home using normal respawn eligibility. This
+                creates no new property.
+              </Box>
+            </Section>
           </Stack.Item>
 
           {/* Join Existing Ship Section */}
@@ -58,8 +122,8 @@ const PurchaseShipSection = () => {
       <Stack vertical>
         <Stack.Item>
           <Box color="gray" fontSize="13px" mb={1}>
-            Purchase a ship from the catalog and become its captain. You&apos;ll
-            be able to customize your crew and set your own course.
+            Buy a ship and become its captain. You&apos;ll pick its hull, theme
+            and upgrade modules in the shipyard, then set your own course.
           </Box>
         </Stack.Item>
         <Stack.Item>
@@ -71,7 +135,51 @@ const PurchaseShipSection = () => {
             textAlign="center"
             onClick={() => act('purchase_ship')}
           >
-            Browse Ship Catalog
+            Open Shipyard
+          </Button>
+        </Stack.Item>
+      </Stack>
+    </Section>
+  );
+};
+
+const RequisitionSection = (props: { canRequisition: boolean }) => {
+  const { act } = useBackend<ShipJoinMenuData>();
+  const { canRequisition } = props;
+
+  return (
+    <Section
+      title={
+        <Box inline>
+          <Icon name="life-ring" mr={1} />
+          Requisition a Hull
+        </Box>
+      }
+    >
+      <Stack vertical>
+        <Stack.Item>
+          <Box color="gray" fontSize="13px" mb={1}>
+            {canRequisition
+              ? 'No ship in the fleet has a position open for you, so the yard will issue you one at no cost. The class, theme and fittings are whatever is on the line. Buy from the shipyard if you want to choose.'
+              : 'Available only when the fleet has no room left. There are still open positions below, join one of those.'}
+          </Box>
+        </Stack.Item>
+        <Stack.Item>
+          <Button
+            fluid
+            icon="wrench"
+            color={canRequisition ? 'good' : undefined}
+            disabled={!canRequisition}
+            fontSize="14px"
+            textAlign="center"
+            tooltip={
+              canRequisition
+                ? 'Spawns a free ship and makes you its officer'
+                : 'The fleet still has open positions'
+            }
+            onClick={() => act('requisition_hull')}
+          >
+            {canRequisition ? 'Requisition a Hull (Free)' : 'Fleet Has Room'}
           </Button>
         </Stack.Item>
       </Stack>
@@ -102,7 +210,7 @@ const JoinShipSection = (props: { ships: ActiveShip[] }) => {
           <br />
           No ships are currently accepting crew.
           <br />
-          Purchase your own ship above!
+          Requisition a free hull above, or buy your own.
         </Box>
       ) : (
         <Stack vertical>
@@ -173,6 +281,28 @@ const ShipCard = (props: { ship: ActiveShip }) => {
                     open
                   </Box>
                 </Stack.Item>
+                {!!ship.locked && (
+                  <Stack.Item ml={1.5}>
+                    <Box
+                      fontSize="12px"
+                      color={ship.password_cleared ? 'lightgreen' : 'yellow'}
+                    >
+                      <Icon
+                        name={ship.password_cleared ? 'unlock' : 'lock'}
+                        mr={0.5}
+                      />
+                      {ship.password_cleared ? 'Cleared' : 'Password'}
+                    </Box>
+                  </Stack.Item>
+                )}
+                {!!ship.crew_locked && (
+                  <Stack.Item ml={1.5}>
+                    <Box fontSize="12px" color="yellow">
+                      <Icon name="door-closed" mr={0.5} />
+                      Crew-only doors
+                    </Box>
+                  </Stack.Item>
+                )}
               </Stack>
             </Stack.Item>
 
@@ -202,15 +332,44 @@ const ShipCard = (props: { ship: ActiveShip }) => {
 
         {/* Join Button */}
         <Stack.Item>
-          <Button
-            icon="sign-in-alt"
-            color="blue"
-            disabled={totalSlots === 0}
-            tooltip={totalSlots === 0 ? 'No positions available' : 'Join crew'}
-            onClick={() => act('select_ship', { ship_ref: ship.ref })}
-          >
-            Join
-          </Button>
+          <Stack vertical>
+            <Stack.Item>
+              <Button
+                fluid
+                icon="sign-in-alt"
+                color="blue"
+                disabled={totalSlots === 0}
+                tooltip={
+                  totalSlots === 0
+                    ? 'No positions available'
+                    : ship.locked && !ship.password_cleared
+                      ? "Requires the crew's join password"
+                      : 'Join crew'
+                }
+                onClick={() => act('select_ship', { ship_ref: ship.ref })}
+              >
+                Join
+              </Button>
+            </Stack.Item>
+            {!!ship.locked && !ship.password_cleared && (
+              <Stack.Item>
+                <Button
+                  fluid
+                  icon="envelope"
+                  color={ship.applied ? undefined : 'good'}
+                  disabled={!!ship.applied}
+                  tooltip={
+                    ship.applied
+                      ? 'Your application is waiting on this crew'
+                      : 'Ask this crew to let you in without the password'
+                  }
+                  onClick={() => act('apply_to_ship', { ship_ref: ship.ref })}
+                >
+                  {ship.applied ? 'Applied' : 'Apply'}
+                </Button>
+              </Stack.Item>
+            )}
+          </Stack>
         </Stack.Item>
       </Stack>
     </Box>

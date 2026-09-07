@@ -43,6 +43,9 @@
 
 	owner.changeNext_move(CLICK_CD_RANGE)
 	check_rcd()
+	if(ship_console.queue_enabled || ship_console.build_size > 1)
+		ship_console.queue_construction(target_turf, owner)
+		return
 
 	// Store turf state before building to detect if we built something new
 	var/was_in_shuttle = ship_console.is_in_shuttle_area(target_turf)
@@ -56,8 +59,15 @@
 	// Check if we should use custom wall/floor building based on current RCD mode
 	var/rcd_mode = ship_rcd.construction_mode
 
-	// Build floor: RCD is in turf mode and target is space (need to create floor first)
-	if(rcd_mode == RCD_TURF && isspaceturf(target_turf))
+	// RCD_TURF is not one design, it is two: the plating blueprint the console's own
+	// material picker covers, and the catwalk. The shortcuts below exist only to honour that
+	// picker (iron/titanium/plastitanium), so they have to be gated on the plating design as
+	// well as the mode - a catwalk selection falling into them silently laid a floor, or a
+	// wall over the floor already there, and never a catwalk (issue #251).
+	var/building_plating = (ship_rcd.rcd_design_path == /turf/open/floor/plating/rcd)
+
+	// Space and bare hangar deck need ship flooring before walls can be built.
+	if(rcd_mode == RCD_TURF && building_plating && ship_rcd.can_build_floor(target_turf) && ship_console.turf_build_mode != "wall")
 		if(!ship_rcd.build_floor(target_turf, owner))
 			return
 		playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
@@ -67,7 +77,7 @@
 		return
 
 	// Build wall: RCD is in turf mode and target is any open floor (including plating)
-	if(rcd_mode == RCD_TURF && istype(target_turf, /turf/open/floor))
+	if(rcd_mode == RCD_TURF && building_plating && istype(target_turf, /turf/open/floor) && ship_console.turf_build_mode != "floor")
 		if(!ship_rcd.build_wall(target_turf, owner))
 			return
 		playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
@@ -76,7 +86,22 @@
 			ship_console.expand_shuttle_to_turf(target_turf, owner)
 		return
 
-	// For other build types (airlocks, windows, etc.), use standard RCD system
+	// An explicit intent must not fall through to the RCD's floor/wall toggle.
+	if(rcd_mode == RCD_TURF && building_plating && ship_console.turf_build_mode != "auto")
+		return
+
+	// Hull windows: grille and window in one action, paid for out of the silo by recipe
+	// rather than as generic RCD matter. Same shortcut the wall and floor pickers get.
+	if(rcd_mode == RCD_WINDOWGRILLE && ship_rcd.is_hull_window(ship_rcd.rcd_design_path))
+		if(!ship_rcd.build_hull_window(target_turf, owner))
+			return
+		playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
+		// Expand shuttle if building outside
+		if(!was_in_shuttle)
+			ship_console.expand_shuttle_to_turf(target_turf, owner)
+		return
+
+	// For other build types (catwalks, airlocks, windows, etc.), use standard RCD system
 	var/atom/rcd_target = target_turf
 
 	// Find airlocks and other structures that can be RCD'd
@@ -87,6 +112,10 @@
 	// Check if we have enough resources before attempting to build
 	var/list/rcd_results = rcd_target.rcd_vals(owner, base_console.internal_rcd)
 	if(!rcd_results)
+		// Silence here reads as a dead button. A catwalk over an existing floor is the case
+		// that gets clicked - /turf/open/floor/rcd_vals() refuses every RCD_TURF design but
+		// plating - and the player has no other way to learn the blueprint does not apply.
+		remote_eye.balloon_alert(owner, "can't build that here!")
 		return
 	var/cost = rcd_results["cost"]
 	if(!base_console.internal_rcd.checkResource(cost, owner))
@@ -97,9 +126,23 @@
 	base_console.internal_rcd.rcd_create(rcd_target, owner)
 	playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
 
-	// Expand shuttle if building outside
-	if(!was_in_shuttle)
-		ship_console.expand_shuttle_to_turf(target_turf, owner)
+	// Expand shuttle if building outside. Re-read the tile: rcd_create() may have replaced
+	// the turf datum under us, and a catwalk leaves it space. A space turf pulled into a
+	// shuttle area never gets the /turf/baseturf_skipover/shuttle stamp (dispatch() skips
+	// space), so it would be silently left behind on the ship's next move.
+	var/turf/built_turf = locate(target_turf.x, target_turf.y, target_turf.z)
+	if(!was_in_shuttle && built_turf && !isspaceturf(built_turf))
+		ship_console.expand_shuttle_to_turf(built_turf, owner)
+	else if(was_in_shuttle && built_turf && rcd_mode == RCD_AIRLOCK)
+		// The overhang warning tells the operator to fit an airlock on the new outermost
+		// plating - and that tile is already hull, so it never reaches
+		// expand_shuttle_to_turf() and nothing would have noticed them doing it. Recheck on
+		// an airlock build so following the instruction actually reseats the port, rather
+		// than leaving them to work out the console's port relocator. Only on RCD_AIRLOCK:
+		// no other design can produce a door for the port to sit on. door_built skips the
+		// "is this tile past the port's plane" gate, because a seat on another face - which
+		// the port may now turn onto - is by definition not on that plane. (issue #130)
+		ship_console.check_port_after_build(built_turf, owner, door_built = TRUE)
 
 /// Ship-specific RCD deconstruct action
 /datum/action/innate/construction/ship/deconstruct
@@ -107,8 +150,6 @@
 	button_icon = 'voidcrew/icons/obj/tools.dmi'
 	button_icon_state = "rcd_remove"
 
-/// Cost to deconstruct an airlock (same as standard RCD)
-#define SHIP_RCD_AIRLOCK_DECONSTRUCT_COST 32
 /// Delay to deconstruct an airlock
 #define SHIP_RCD_AIRLOCK_DECONSTRUCT_DELAY (5 SECONDS)
 
@@ -120,6 +161,7 @@
 	var/turf/target_turf = get_turf(remote_eye)
 	var/atom/rcd_target = target_turf
 	var/obj/machinery/computer/camera_advanced/base_construction/ship/ship_console = base_console
+	var/obj/item/construction/rcd/internal/ship/ship_rcd = base_console.internal_rcd
 
 	// Check for indestructible objects blocking deconstruction (blast doors, r-walls, etc.)
 	for(var/obj/blocker in target_turf)
@@ -132,52 +174,44 @@
 		remote_eye.balloon_alert(owner, "can't deconstruct that!")
 		return
 
-	// Special handling for airlocks - bypass reinforcement/seal checks for remote construction
+	// Cameras and airlocks are removed directly; airlocks retain the console's
+	// existing ability to bypass reinforcement and seals.
+	var/obj/machinery/camera/target_camera = locate() in target_turf
 	var/obj/machinery/door/airlock/target_airlock = locate() in target_turf
-	if(target_airlock)
+	var/obj/fixture = target_camera || target_airlock
+	if(fixture)
 		owner.changeNext_move(CLICK_CD_RANGE)
 		check_rcd()
-
-		// Check resources
-		if(!base_console.internal_rcd.checkResource(SHIP_RCD_AIRLOCK_DECONSTRUCT_COST, owner))
-			remote_eye.balloon_alert(owner, "not enough resources!")
+		if(!ship_rcd.can_refund_materials(owner))
 			return
-
-		// Show construction effect
-		var/obj/effect/constructing_effect/rcd_effect = new(target_turf, SHIP_RCD_AIRLOCK_DECONSTRUCT_DELAY, RCD_DECONSTRUCT)
-
-		// Delay for deconstruction
-		var/obj/item/construction/rcd/internal/ship/ship_rcd = base_console.internal_rcd
-		if(!ship_rcd.build_delay(owner, SHIP_RCD_AIRLOCK_DECONSTRUCT_DELAY, target_airlock))
+		var/decon_time = (target_camera ? SHIP_CAMERA_DECONSTRUCT_DELAY : SHIP_RCD_AIRLOCK_DECONSTRUCT_DELAY) * ship_rcd.get_build_speed_mod()
+		var/obj/effect/constructing_effect/rcd_effect = new(target_turf, decon_time, RCD_DECONSTRUCT)
+		if(!ship_rcd.build_delay(owner, decon_time, fixture))
 			qdel(rcd_effect)
 			return
-
-		// Use resources after delay
-		if(!base_console.internal_rcd.useResource(SHIP_RCD_AIRLOCK_DECONSTRUCT_COST, owner))
+		if(QDELETED(fixture) || !ship_rcd.can_refund_materials(owner))
 			qdel(rcd_effect)
-			remote_eye.balloon_alert(owner, "not enough resources!")
 			return
-
-		// Remove the airlock
+		var/list/materials = ship_rcd.get_deconstruction_materials(fixture)
+		ship_console.forget_repair_record(ship_console.repair_coordinate_key(target_turf))
 		playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
 		rcd_effect.end_animation()
-		qdel(target_airlock)
-
-		// Clean up any empty shuttle turfs after deconstruction
+		qdel(fixture)
+		ship_rcd.refund_materials(materials, owner)
 		ship_console.cleanup_deconstructed_turfs()
 		return
+
+	owner.changeNext_move(CLICK_CD_RANGE)
+	check_rcd()
+
+	// Select targets in demolition mode so windows and girders take priority over the floor.
+	var/old_mode = ship_rcd.mode
+	ship_rcd.mode = RCD_DECONSTRUCT
 
 	// Find structures that can be deconstructed
 	for(var/obj/S in target_turf)
 		if(LAZYLEN(S.rcd_vals(owner, base_console.internal_rcd)))
 			rcd_target = S
-
-	owner.changeNext_move(CLICK_CD_RANGE)
-	check_rcd()
-
-	// Temporarily set RCD to deconstruct mode
-	var/old_mode = base_console.internal_rcd.mode
-	base_console.internal_rcd.mode = RCD_DECONSTRUCT
 
 	// Check if we can deconstruct this target
 	var/list/rcd_results = rcd_target.rcd_vals(owner, base_console.internal_rcd)
@@ -186,10 +220,8 @@
 		remote_eye.balloon_alert(owner, "can't deconstruct that!")
 		return
 
-	var/cost = rcd_results["cost"]
-	if(!base_console.internal_rcd.checkResource(cost, owner))
-		base_console.internal_rcd.mode = old_mode
-		remote_eye.balloon_alert(owner, "not enough resources!")
+	if(!ship_rcd.can_refund_materials(owner))
+		ship_rcd.mode = old_mode
 		return
 
 	// Perform the RCD deconstruction
@@ -201,6 +233,46 @@
 
 	// Clean up any empty shuttle turfs after deconstruction
 	ship_console.cleanup_deconstructed_turfs()
+
+/// Ship camera build action - mounts a finished camera on the wall the drone faces
+/datum/action/innate/construction/ship/camera_build
+	name = "Place Camera"
+	button_icon = 'icons/obj/machines/camera.dmi'
+	button_icon_state = "camera"
+
+/datum/action/innate/construction/ship/camera_build/Activate()
+	if(..())
+		return
+	if(!check_spot())
+		return
+	var/turf/target_turf = get_turf(remote_eye)
+	var/obj/machinery/computer/camera_advanced/base_construction/ship/ship_console = base_console
+	var/obj/item/construction/rcd/internal/ship/ship_rcd = base_console.internal_rcd
+
+	// The camera goes on the drone's own turf, hung on the wall the drone is facing,
+	// so it watches the room the drone is in (mirrors handheld wallframe placement).
+	if(!istype(target_turf, /turf/open) || isspaceturf(target_turf))
+		remote_eye.balloon_alert(owner, "need open floor!")
+		return
+
+	var/wall_dir = remote_eye.dir
+	if(ISDIAGONALDIR(wall_dir) || !isclosedturf(get_step(target_turf, wall_dir)))
+		remote_eye.balloon_alert(owner, "face an adjacent wall!")
+		return
+
+	if(locate(/obj/machinery/camera) in target_turf)
+		remote_eye.balloon_alert(owner, "camera already here!")
+		return
+
+	owner.changeNext_move(CLICK_CD_RANGE)
+	check_rcd()
+
+	var/obj/machinery/camera/placed_camera = ship_rcd.build_camera(target_turf, wall_dir, owner)
+	if(!placed_camera)
+		return
+
+	ship_console.setup_placed_camera(placed_camera)
+	playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
 
 /// Ship-specific RCD configure action
 /datum/action/innate/construction/ship/configure_mode
@@ -253,34 +325,8 @@
 		remote_eye.balloon_alert(owner, "no RTD installed!")
 		return
 
-	var/obj/item/construction/rtd/internal/rtd = ship_console.internal_rtd
-
-	// RTD can only tile on plating
-	if(!istype(target_turf, /turf/open/floor/plating))
-		remote_eye.balloon_alert(owner, "need plating!")
-		return
-
 	owner.changeNext_move(CLICK_CD_RANGE)
-
-	// Check and use silo materials
-	if(!rtd.check_tile_materials(owner))
-		return
-	if(!rtd.use_tile_materials(owner))
-		return
-
-	// Create and place the tile
-	var/obj/item/stack/tile/final_tile = rtd.selected_design.new_tile(target_turf, rtd.selected_direction)
-	if(QDELETED(final_tile))
-		remote_eye.balloon_alert(owner, "tile creation failed!")
-		return
-
-	var/turf/open/new_turf = final_tile.place_tile(target_turf, owner)
-	if(new_turf)
-		// Apply any saved overlays
-		for(var/datum/overlay_info/info in rtd.design_overlays)
-			info.add_decal(new_turf)
-
-	playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
+	ship_console.decorate_turf(target_turf, owner, "tile")
 
 /// Ship RTD deconstruct action - removes floor tiles
 /datum/action/innate/construction/ship/rtd_deconstruct
@@ -308,10 +354,16 @@
 	if(!istype(target_turf, /turf/open/floor))
 		remote_eye.balloon_alert(owner, "can't remove that!")
 		return
+	var/turf/open/floor/target_floor = target_turf
+	if(target_floor.rcd_proof || (target_floor.resistance_flags & INDESTRUCTIBLE))
+		remote_eye.balloon_alert(owner, "can't remove that!")
+		return
+	var/obj/item/construction/rcd/internal/ship/ship_rcd = ship_console.internal_rcd
+	if(!ship_rcd.can_refund_materials(owner))
+		return
+	var/list/materials = ship_rcd.get_deconstruction_materials(target_turf)
 
 	owner.changeNext_move(CLICK_CD_RANGE)
-
-	// Tile deconstruction is free (no silo materials needed)
 
 	// Remove decals
 	var/list/all_decals = list()
@@ -322,10 +374,16 @@
 		qdel(decal)
 
 	// Change turf to plating
+	var/original_turf_type = target_turf.type
+	var/original_layers = target_turf.count_baseturfs()
+	var/turf/new_turf
 	if(target_turf.baseturf_at_depth(1) == /turf/baseturf_bottom)
-		target_turf.ChangeTurf(/turf/open/floor/plating, flags = CHANGETURF_INHERIT_AIR)
+		new_turf = target_turf.ChangeTurf(/turf/open/floor/plating, flags = CHANGETURF_INHERIT_AIR)
 	else
-		target_turf.ScrapeAway(flags = CHANGETURF_INHERIT_AIR)
+		new_turf = target_turf.ScrapeAway(flags = CHANGETURF_INHERIT_AIR)
+	if(!new_turf || (new_turf.type == original_turf_type && new_turf.count_baseturfs() >= original_layers))
+		return
+	ship_rcd.refund_materials(materials, owner)
 
 	playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
 
@@ -371,12 +429,6 @@
 
 	var/obj/item/pipe_dispenser/internal/rpd = ship_console.internal_rpd
 
-	// Check and use silo materials before placing pipe
-	if(!rpd.check_pipe_materials(owner))
-		return
-	if(!rpd.use_pipe_materials(owner))
-		return
-
 	// Use the RPD's interact_with_atom to handle pipe placement
 	rpd.interact_with_atom(target_turf, owner)
 
@@ -418,6 +470,7 @@
 		return
 
 	// Find and destroy unplaced pipe-related objects on this turf
+	// Pipes are free to place and remove, so removal must not generate silo materials.
 	var/destroyed_something = FALSE
 	for(var/obj/item/pipe/P in target_turf)
 		qdel(P)
@@ -587,27 +640,24 @@
 
 	owner.changeNext_move(CLICK_CD_RANGE)
 
-	var/obj/item/construction/rld/rld = ship_console.internal_rld
-
 	// Find a light fixture to remove
 	var/obj/machinery/light/target_light = locate() in target_turf
 	if(!target_light)
 		remote_eye.balloon_alert(owner, "no light here!")
 		return
 
-	// Check resources (deconstruction costs 10 matter)
-	if(!rld.checkResource(10, owner))
-		remote_eye.balloon_alert(owner, "not enough resources!")
+	if(target_light.resistance_flags & INDESTRUCTIBLE)
+		remote_eye.balloon_alert(owner, "can't remove that!")
 		return
-
-	// Use resources
-	if(!rld.useResource(10, owner))
-		remote_eye.balloon_alert(owner, "not enough resources!")
+	var/obj/item/construction/rcd/internal/ship/ship_rcd = ship_console.internal_rcd
+	if(!ship_rcd.can_refund_materials(owner))
 		return
+	var/list/materials = ship_rcd.get_deconstruction_materials(target_light)
 
 	// Remove the light
 	playsound(target_turf, 'sound/items/deconstruct.ogg', 60, TRUE)
 	qdel(target_light)
+	ship_rcd.refund_materials(materials, owner)
 
 // ============================================
 // T-Ray Scanner Actions

@@ -5,29 +5,39 @@
 "b" = (
 /turf/open/misc/wasteland/lit,
 /area/overmap_encounter/planetoid/wasteland)
+"c" = (
+/obj/effect/zone_mobs/robot,
+/turf/open/misc/wasteland/lit,
+/area/overmap_encounter/planetoid/wasteland)
 "d" = (
 /turf/closed/wall/mineral/abductor,
+/area/ruin/unpowered)
+"e" = (
+/obj/effect/zone_mobs/robot,
+/turf/open/misc/dust/lit,
+/area/overmap_encounter/planetoid/wasteland)
+"f" = (
+/obj/effect/zone_mobs/robot,
+/turf/open/floor/plating/abductor,
+/area/ruin/unpowered)
+"g" = (
+/obj/structure/closet/crate/zone_loot/research,
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "j" = (
 /obj/machinery/abductor/experiment{
 	team_number = 100
 	},
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "k" = (
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "l" = (
 /obj/machinery/abductor/pad{
 	team_number = 100
 	},
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "n" = (
 /obj/structure/lattice,
@@ -35,68 +45,48 @@
 /area/ruin/unpowered)
 "o" = (
 /obj/item/hemostat/alien,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "p" = (
-/obj/effect/mob_spawn/human/abductor,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/obj/effect/mob_spawn/corpse/human/abductor,
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "q" = (
 /obj/structure/closet/abductor,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "s" = (
 /obj/structure/table/optable/abductor,
 /obj/item/cautery/alien,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "t" = (
 /obj/structure/table/abductor,
 /obj/item/storage/box/alienhandcuffs,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "v" = (
 /obj/item/scalpel/alien,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "w" = (
 /obj/item/retractor/alien,
 /obj/item/paper/guides/antag/abductor,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "y" = (
 /obj/machinery/abductor/gland_dispenser,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "z" = (
 /obj/structure/table/abductor,
 /obj/item/surgicaldrill/alien,
 /obj/item/circular_saw/alien,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "A" = (
 /obj/structure/bed/abductor,
-/turf/open/floor/plating/abductor{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating/abductor,
 /area/ruin/unpowered)
 "X" = (
 /turf/open/misc/dust/lit,
@@ -155,7 +145,7 @@ a
 a
 d
 j
-k
+f
 k
 n
 y
@@ -180,7 +170,7 @@ a
 d
 l
 p
-k
+g
 w
 A
 d
@@ -213,7 +203,7 @@ a
 (10,1,1) = {"
 a
 a
-b
+c
 X
 X
 X
@@ -299,7 +289,7 @@ a
 b
 b
 b
-X
+e
 X
 b
 b

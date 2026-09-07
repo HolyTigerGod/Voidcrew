@@ -10,6 +10,43 @@
 	icon_state = "heater"
 	icon = 'voidcrew/modules/shuttle/icons/shuttle.dmi'
 
+/// Re-point the single pipe node after a rotation and rebuild the pipenet.
+/// Shared by every unary shuttle atmos device so they can all be turned to
+/// face their pipe network; the heater overrides this to also refresh engines.
+/obj/machinery/atmospherics/components/unary/shuttle/default_change_direction_wrench(mob/user, obj/item/I)
+	if(!..())
+		return FALSE
+	set_init_directions()
+	var/obj/machinery/atmospherics/node = nodes[1]
+	if(node)
+		node.disconnect(src)
+		nodes[1] = null
+	if(!parents[1])
+		return TRUE
+	nullify_pipenet(parents[1])
+
+	atmos_init()
+	node = nodes[1]
+	if(node)
+		node.atmos_init()
+		node.add_member(src)
+	SSair.add_to_rebuild_queue(src)
+	return TRUE
+
+/obj/machinery/atmospherics/components/unary/shuttle/wrench_act_secondary(mob/living/user, obj/item/tool)
+	if(!panel_open)
+		balloon_alert(user, "open panel first!")
+		return ITEM_INTERACT_SUCCESS
+	if(default_change_direction_wrench(user, tool))
+		return ITEM_INTERACT_SUCCESS
+	return ITEM_INTERACT_BLOCKING
+
+/datum/armor/shuttle_heater
+	energy = 100
+	bio = 100
+	fire = 100
+	acid = 30
+
 /obj/machinery/atmospherics/components/unary/shuttle/heater
 	name = "engine heater"
 	desc = "Directs energy into compressed particles in order to power an attached thruster."
@@ -21,7 +58,7 @@
 
 	density = TRUE
 	max_integrity = 400
-	armor = list("melee" = 0, "bullet" = 0, "laser" = 0, "energy" = 100, "bomb" = 0, "bio" = 100, "rad" = 100, "fire" = 100, "acid" = 30)
+	armor_type = /datum/armor/shuttle_heater
 	layer = OBJ_LAYER
 	move_resist = MOVE_RESIST_DEFAULT
 	//showpipe = TRUE // TODO: Fix showpipe
@@ -43,8 +80,8 @@
 	update_adjacent_engines()
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/Destroy()
-	. = ..()
-	update_adjacent_engines()
+	update_adjacent_engines() //must run before parent moves us to nullspace, or the engines are never told
+	return ..()
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/on_construction()
 	..(dir, dir)
@@ -76,19 +113,15 @@
 	return TRUE
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/RefreshParts()
-	var/cap = 0
-	var/eff = 0
-	for(var/obj/item/stock_parts/matter_bin/M in component_parts)
-		cap += M.rating
-	for(var/obj/item/stock_parts/micro_laser/L in component_parts)
-		eff += L.rating
+	var/cap = max(total_part_rating(/datum/stock_part/matter_bin), 1)
+	var/eff = max(total_part_rating(/datum/stock_part/micro_laser), 2)
 	gas_capacity = 5000 * ((cap - 1) ** 2) + 1000
 	efficiency_multiplier = round(((eff / 2) / 2.8) ** 2, 0.1)
 	update_gas_stats()
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/examine(mob/user)
 	. = ..()
-	. += "It looks like the fuel source can be toggled with an alt-click."
+	. += "It is set to draw fuel from [use_tank ? "the attached tank" : "the atmospherics system"]. Looks like the fuel source can be toggled by hand."
 	. += "The engine heater's gas dial reads [return_gas()] moles of gas.<br>"
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/proc/return_gas(gas_type)
@@ -132,7 +165,9 @@
 		return
 	if(!gas_type)
 		var/datum/gas_mixture/removed = air_contents.remove(amount)
-		return removed.return_volume()
+		if(!removed)
+			return 0
+		return removed.total_moles()
 	else
 		air_contents.assert_gas(gas_type)
 		var/starting_amt = air_contents.gases[gas_type][MOLES]
@@ -179,14 +214,25 @@
 		return
 	return ..()
 
-/obj/machinery/atmospherics/components/unary/shuttle/heater/click_alt(mob/living/L)
+/obj/machinery/atmospherics/components/unary/shuttle/heater/attack_hand(mob/living/user, list/modifiers)
 	. = ..()
 	if(panel_open)
-		return
+		balloon_alert(user, "close panel first!")
+		return TRUE
+	toggle_fuel_source(user)
+	return TRUE
+
+/**
+  * Flips the heater between drawing fuel from the pipe network and from an inserted tank,
+  * and repoints the icon states so the sprite matches the source it is set to.
+  */
+/obj/machinery/atmospherics/components/unary/shuttle/heater/proc/toggle_fuel_source(mob/user)
 	use_tank = !use_tank
-	to_chat(L, "<span class='notice'>You switch [src] to draw fuel from [use_tank ? "the attached tank" : "the atmospherics system"].")
 	icon_state_closed = use_tank ? "heater" : initial(icon_state)
 	icon_state_open = use_tank ? "heater_open" : "[initial(icon_state)]_open"
+	icon_state = panel_open ? icon_state_open : icon_state_closed
+	if(user)
+		to_chat(user, span_notice("You switch [src] to draw fuel from [use_tank ? "the attached tank" : "the atmospherics system"]."))
 
 /obj/machinery/atmospherics/components/unary/shuttle/heater/proc/update_adjacent_engines()
 	var/engine_turf
@@ -204,7 +250,9 @@
 	for(var/obj/machinery/power/shuttle_engine/ship/fueled/E in engine_turf)
 		E.update_icon_state()
 
-/obj/machinery/atmospherics/components/unary/shuttle/heater/tank/Initialize()
+/obj/machinery/atmospherics/components/unary/shuttle/heater/tank/Initialize(mapload)
 	. = ..()
+	// Ships pipe plasma to their heaters, so this starts drawing from the atmospherics
+	// system. The tank comes along as a backup for when the pipe line runs dry or breaks -
+	// click the heater by hand to switch it over.
 	fuel_tank = new /obj/item/tank/internals/plasma/full(src)
-	// Defaults to atmos mode; alt-click to switch to the included tank

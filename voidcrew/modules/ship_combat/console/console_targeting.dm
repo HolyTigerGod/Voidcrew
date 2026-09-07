@@ -1,5 +1,34 @@
 // ========== TARGET SELECTION & ZONE CHECKS ==========
 
+/**
+ * Whether this console may name a contact: the ship's own identity gate (see
+ * knows_vessel in ship_sensors.dm), plus the hull we are actively painting.
+ *
+ * The lock counts on its own because the helm's contact ring is a circle where
+ * this scope is a square, a target held at the corner of our range can fall out
+ * of the ship's identified set while we still have a firing solution on it.
+ */
+/obj/machinery/computer/camera_advanced/ship_combat/proc/knows_contact(obj/structure/overmap/contact)
+	if(!contact)
+		return FALSE
+	// Anything that isn't a vessel (an outpost, a fixture) was never anonymous.
+	var/obj/structure/overmap/ship/vessel = contact
+	if(!istype(vessel))
+		return TRUE
+	if(vessel == target_ship)
+		return TRUE
+	return !!current_ship?.knows_vessel(vessel)
+
+/**
+ * What this console is allowed to call a contact out loud. Every user-facing
+ * string that names one goes through here, so announcing a lock attempt doesn't
+ * hand over the name the scope is deliberately withholding.
+ */
+/obj/machinery/computer/camera_advanced/ship_combat/proc/contact_label(obj/structure/overmap/contact)
+	if(!contact)
+		return "target"
+	return knows_contact(contact) ? contact.display_name : "unknown contact"
+
 /// Called when our ship's zone changes (due to zone rotation) - check if we need to break locks
 /obj/machinery/computer/camera_advanced/ship_combat/proc/on_our_ship_zone_changed(datum/source, old_zone_type, new_zone_type)
 	SIGNAL_HANDLER
@@ -35,7 +64,7 @@
 			current_ship.ship_notify("Target lock failed - entered safe zone.", "TARGETING", SHIP_NOTIFY_WARNING, 'voidcrew/sound/warn.ogg', 25)
 			return
 		if(target_zone?.zone_type == ZONE_GREEN)
-			var/target_name = targeting_ship.display_name
+			var/target_name = contact_label(targeting_ship)
 			cancel_targeting()
 			if(current_user)
 				to_chat(current_user, span_warning("Target lock lost - zone shift placed [target_name] in [target_zone.name]!"))
@@ -63,11 +92,17 @@
 			clear_target()
 			current_ship.ship_notify("Weapons lock lost - target entered safe zone.", "TARGETING", SHIP_NOTIFY_WARNING, 'voidcrew/sound/warn.ogg', 25)
 
-/// Starts the targeting process for a new ship (takes time and warns the target)
-/obj/machinery/computer/camera_advanced/ship_combat/proc/start_targeting(obj/structure/overmap/ship/new_target, mob/user)
+/// Starts the targeting process for a new target (takes time and warns the target)
+/obj/machinery/computer/camera_advanced/ship_combat/proc/start_targeting(obj/structure/overmap/new_target, mob/user)
 	if(new_target == current_ship)
 		if(user)
 			to_chat(user, span_warning("Cannot target your own ship!"))
+		return FALSE
+
+	// Protected targets (e.g. green-zone player outposts) never enter the lock pipeline
+	if(!new_target.is_combat_targetable())
+		if(user)
+			to_chat(user, span_warning("Weapons systems cannot resolve a firing solution on [contact_label(new_target)]."))
 		return FALSE
 
 	// Can't acquire locks while docked
@@ -107,7 +142,7 @@
 	// If we already have this ship locked, no need to re-target
 	if(target_ship == new_target)
 		if(user)
-			to_chat(user, span_notice("Already have target lock on [new_target.display_name]."))
+			to_chat(user, span_notice("Already have target lock on [contact_label(new_target)]."))
 		return FALSE
 
 	// Start the targeting process
@@ -132,7 +167,7 @@
 
 	// Notify our crew
 	if(user)
-		to_chat(user, span_notice("Acquiring target lock on [targeting_ship.display_name]... ([COMBAT_TARGETING_TIME / 10] seconds)"))
+		to_chat(user, span_notice("Acquiring target lock on [contact_label(targeting_ship)]... ([COMBAT_TARGETING_TIME / 10] seconds)"))
 
 	// Start the targeting timer
 	targeting_timer_id = addtimer(CALLBACK(src, PROC_REF(complete_targeting), user), COMBAT_TARGETING_TIME, TIMER_STOPPABLE)
@@ -144,7 +179,7 @@
 	if(!is_targeting || !targeting_ship)
 		return FALSE
 
-	var/obj/structure/overmap/ship/locked_target = targeting_ship
+	var/obj/structure/overmap/locked_target = targeting_ship
 
 	// Clean up targeting state
 	UnregisterSignal(targeting_ship, list(COMSIG_QDELETING, COMSIG_VOIDCREW_SHIP_MOVED, COMSIG_SHIP_ZONE_CHANGED))
@@ -173,12 +208,22 @@
 	SEND_SIGNAL(target_ship, COMSIG_SHIP_TARGETING_STOPPED, current_ship)
 	SEND_SIGNAL(target_ship, COMSIG_SHIP_WEAPONS_LOCKED, current_ship)
 
+	// A completed lock is a look. We have held sensors on that hull for the whole
+	// acquisition and now have a firing solution on it, so it stops being an
+	// anonymous return here AND on the helm chart. This is the second way a crew
+	// can name a vessel, alongside an active scan. The reverse is just as true: a
+	// targeting radar is a beacon, so painting someone tells them who you are.
+	var/obj/structure/overmap/ship/locked_vessel = target_ship
+	if(istype(locked_vessel))
+		current_ship?.mark_vessel_identified(locked_vessel)
+		locked_vessel.mark_vessel_identified(current_ship)
+
 	// Notify our crew
 	if(user)
 		to_chat(user, span_danger("Target lock acquired on [target_ship.display_name]!"))
 	current_ship?.ship_notify("Target lock acquired: [target_ship.display_name]", "TARGETING", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
 
-	return TRUE\
+	return TRUE
 
 /// Cancels an in-progress targeting attempt
 /obj/machinery/computer/camera_advanced/ship_combat/proc/cancel_targeting()
@@ -235,7 +280,7 @@
 			current_ship?.ship_notify("Target lock failed - entered safe zone.", "TARGETING", SHIP_NOTIFY_WARNING, 'voidcrew/sound/warn.ogg', 25)
 			return
 		if(target_zone?.zone_type == ZONE_GREEN)
-			var/target_name = targeting_ship.display_name
+			var/target_name = contact_label(targeting_ship)
 			cancel_targeting()
 			if(current_user)
 				to_chat(current_user, span_warning("Target lock lost - [target_name] entered [target_zone.name]!"))
@@ -244,7 +289,7 @@
 
 	// Check if line of sight is blocked (e.g., by a nebula)
 	if(!current_ship.has_los_to(targeting_ship))
-		var/target_name = targeting_ship.display_name
+		var/target_name = contact_label(targeting_ship)
 		cancel_targeting()
 		if(current_user)
 			to_chat(current_user, span_warning("Target lock lost - [target_name] obscured by interference!"))
@@ -253,7 +298,7 @@
 
 	var/distance = get_dist(our_turf, target_turf)
 	if(distance > COMBAT_TARGETING_RANGE)
-		var/target_name = targeting_ship.display_name
+		var/target_name = contact_label(targeting_ship)
 		cancel_targeting()
 		if(current_user)
 			to_chat(current_user, span_warning("Target lock lost - [target_name] moved out of sensor range!"))
@@ -312,22 +357,21 @@
 	if(current_user)
 		to_chat(current_user, span_danger("Target lost!"))
 
-/// Sets a new target ship (legacy - now just calls start_targeting)
-/obj/machinery/computer/camera_advanced/ship_combat/proc/set_target_ship(obj/structure/overmap/ship/new_target, mob/user)
+/// Sets a new target (legacy - now just calls start_targeting)
+/obj/machinery/computer/camera_advanced/ship_combat/proc/set_target_ship(obj/structure/overmap/new_target, mob/user)
 	return start_targeting(new_target, user)
 
-/// Gets a turf at the target ship's mobile docking port
+/// Gets the target's default aim turf (ships: their docking port; outposts: their arrival point)
 /obj/machinery/computer/camera_advanced/ship_combat/proc/get_target_ship_port_turf()
-	if(!target_ship?.shuttle)
-		return null
-	return get_turf(target_ship.shuttle)
+	return target_ship?.get_combat_default_turf()
 
-/// Gets any valid turf on the target ship (fallback)
+/// Gets any valid turf on the target (fallback)
 /obj/machinery/computer/camera_advanced/ship_combat/proc/get_target_ship_turf()
-	if(!target_ship?.shuttle?.shuttle_areas)
-		return null
+	var/list/target_areas = target_ship?.get_combat_target_areas()
+	if(!target_areas)
+		return target_ship?.get_combat_default_turf()
 
-	for(var/area/A in target_ship.shuttle.shuttle_areas)
+	for(var/area/A in target_areas)
 		for(var/turf/T in A)
 			if(!isclosedturf(T))
 				return T

@@ -1,13 +1,15 @@
 /datum/map_generator/cave_generator/icemoon
-	open_turf_types = list(/turf/open/misc/asteroid/snow/icemoon/breathable = 19, /turf/open/misc/ice/icemoon/breathable = 1)
-	closed_turf_types = list(/turf/closed/mineral/random/snow = 1)
+	// New() rebuilds the expanded turf lists from these weighted lists. Setting
+	// open_turf_types directly silently fell back to upstream ICEMOON_ATMOS turfs.
+	weighted_open_turf_types = list(/turf/open/misc/asteroid/snow/icemoon/breathable = 19, /turf/open/misc/ice/icemoon/breathable = 1)
+	weighted_closed_turf_types = list(/turf/closed/mineral/random/snow = 1)
 
 
 	feature_spawn_list = list(/obj/structure/geyser/random = 1, /obj/structure/elite_tumor = 2)
 	mob_spawn_list = list(
 		/mob/living/basic/mining/wolf/random = 30, /obj/structure/spawner/ice_moon = 3,
 		/mob/living/simple_animal/hostile/asteroid/polarbear/random = 30, /obj/structure/spawner/ice_moon/polarbear = 3,
-		/mob/living/basic/mining/legion/snow = 50, /mob/living/basic/mining/goldgrub = 10,
+		/mob/living/basic/mining/legion/snow = 25, /mob/living/basic/mining/goldgrub = 15,
 		/mob/living/basic/mining/ice_demon/random = 20, /obj/structure/spawner/ice_moon/demonic_portal = 7,
 		/mob/living/basic/mining/ice_whelp = 20, /obj/structure/spawner/ice_moon/demonic_portal/ice_whelp = 7,
 		/obj/structure/spawner/ice_moon/demonic_portal/snowlegion = 7,

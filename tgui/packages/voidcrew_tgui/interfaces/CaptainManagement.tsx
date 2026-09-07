@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { type BooleanLike } from 'tgui-core/react';
 import {
   Box,
   Button,
@@ -12,6 +11,7 @@ import {
   Tabs,
   TextArea,
 } from 'tgui-core/components';
+import type { BooleanLike } from 'tgui-core/react';
 
 import { useBackend } from '../backend';
 import { Window } from '../layouts';
@@ -22,6 +22,7 @@ type CrewMember = {
   ref: string;
   is_captain: BooleanLike;
   is_online: BooleanLike;
+  can_take_command: BooleanLike;
 };
 
 type AvailablePlayer = {
@@ -35,25 +36,39 @@ type PendingInvite = {
   time: number;
 };
 
+type CrewApplication = {
+  ref: string;
+  name: string;
+  ckey: string;
+  message: string;
+  /// Seconds this application has been waiting
+  waiting: number;
+};
+
 type Data = {
   ship_destroyed: BooleanLike;
   ship_name: string;
   memo: string;
   joining_allowed: BooleanLike;
+  join_password: string;
+  can_set_password: BooleanLike;
+  crew_only_airlocks: BooleanLike;
   is_captain: BooleanLike;
   crew: CrewMember[];
   available_players: AvailablePlayer[];
   pending_invites: PendingInvite[];
+  applications: CrewApplication[];
   can_invite: BooleanLike;
   can_rename: BooleanLike;
+  command_offer_pending: BooleanLike;
 };
 
 export const CaptainManagement = () => {
   const { data } = useBackend<Data>();
   const { ship_destroyed, ship_name, is_captain } = data;
-  const [currentTab, setCurrentTab] = useState<'crew' | 'invites' | 'settings'>(
-    'crew',
-  );
+  const [currentTab, setCurrentTab] = useState<
+    'crew' | 'invites' | 'applications' | 'settings'
+  >('crew');
 
   if (ship_destroyed) {
     return (
@@ -96,6 +111,13 @@ export const CaptainManagement = () => {
                 Invites ({data.pending_invites.length})
               </Tabs.Tab>
               <Tabs.Tab
+                selected={currentTab === 'applications'}
+                onClick={() => setCurrentTab('applications')}
+                icon="clipboard-list"
+              >
+                Applications ({data.applications.length})
+              </Tabs.Tab>
+              <Tabs.Tab
                 selected={currentTab === 'settings'}
                 onClick={() => setCurrentTab('settings')}
                 icon="cog"
@@ -108,6 +130,7 @@ export const CaptainManagement = () => {
           <Stack.Item grow>
             {currentTab === 'crew' && <CrewTab />}
             {currentTab === 'invites' && <InvitesTab />}
+            {currentTab === 'applications' && <ApplicationsTab />}
             {currentTab === 'settings' && <SettingsTab />}
           </Stack.Item>
         </Stack>
@@ -118,7 +141,7 @@ export const CaptainManagement = () => {
 
 const CrewTab = () => {
   const { act, data } = useBackend<Data>();
-  const { crew } = data;
+  const { crew, command_offer_pending } = data;
 
   return (
     <Section title="Crew Roster">
@@ -149,15 +172,37 @@ const CrewTab = () => {
               </Table.Cell>
               <Table.Cell>
                 {!member.is_captain && (
-                  <Button
-                    icon="user-minus"
-                    color="bad"
-                    compact
-                    onClick={() => act('kick_crew', { ref: member.ref })}
-                    tooltip="Remove from crew"
-                  >
-                    Kick
-                  </Button>
+                  <>
+                    <Button
+                      icon="user-minus"
+                      color="bad"
+                      compact
+                      onClick={() => act('kick_crew', { ref: member.ref })}
+                      tooltip="Remove from crew"
+                    >
+                      Kick
+                    </Button>
+                    <Button
+                      icon="crown"
+                      color="caution"
+                      compact
+                      disabled={
+                        !member.can_take_command || !!command_offer_pending
+                      }
+                      onClick={() =>
+                        act('transfer_command', { ref: member.ref })
+                      }
+                      tooltip={
+                        command_offer_pending
+                          ? 'An offer of command is already waiting on an answer'
+                          : member.can_take_command
+                            ? 'Offer them command of the ship. They get 30 seconds to accept, and you stop being captain if they do.'
+                            : 'They must be alive and online to take command'
+                      }
+                    >
+                      Transfer
+                    </Button>
+                  </>
                 )}
               </Table.Cell>
             </Table.Row>
@@ -192,7 +237,9 @@ const InvitesTab = () => {
                       icon="times"
                       color="bad"
                       compact
-                      onClick={() => act('cancel_invite', { ckey: invite.ckey })}
+                      onClick={() =>
+                        act('cancel_invite', { ckey: invite.ckey })
+                      }
                     >
                       Cancel
                     </Button>
@@ -224,7 +271,9 @@ const InvitesTab = () => {
                       color="good"
                       compact
                       disabled={!can_invite}
-                      onClick={() => act('invite_player', { ckey: player.ckey })}
+                      onClick={() =>
+                        act('invite_player', { ckey: player.ckey })
+                      }
                       tooltip={
                         can_invite
                           ? 'Send crew invitation'
@@ -244,11 +293,80 @@ const InvitesTab = () => {
   );
 };
 
+const ApplicationsTab = () => {
+  const { act, data } = useBackend<Data>();
+  const { applications } = data;
+
+  return (
+    <Section title="Applications to Join" fill scrollable>
+      {applications.length === 0 ? (
+        <NoticeBox info>
+          Nobody has applied. Players see an Apply button on your ship in the
+          lobby whenever it is password-locked; approving one lets that player
+          in without the password. Applications lapse after ten minutes.
+        </NoticeBox>
+      ) : (
+        <Stack vertical>
+          {applications.map((application) => (
+            <Stack.Item key={application.ref}>
+              <Section>
+                <Stack align="center">
+                  <Stack.Item grow>
+                    <Box bold>{application.name}</Box>
+                    <Box color="label" fontSize="11px">
+                      ckey: {application.ckey} - waiting {application.waiting}s
+                    </Box>
+                  </Stack.Item>
+                  <Stack.Item>
+                    <Button
+                      icon="check"
+                      color="good"
+                      onClick={() =>
+                        act('approve_application', { ref: application.ref })
+                      }
+                    >
+                      Approve
+                    </Button>
+                  </Stack.Item>
+                  <Stack.Item>
+                    <Button
+                      icon="times"
+                      color="bad"
+                      tooltip="Asks you for an optional reason to send back"
+                      onClick={() =>
+                        act('deny_application', { ref: application.ref })
+                      }
+                    >
+                      Deny
+                    </Button>
+                  </Stack.Item>
+                </Stack>
+                <Box mt={1} italic>
+                  &quot;{application.message}&quot;
+                </Box>
+              </Section>
+            </Stack.Item>
+          ))}
+        </Stack>
+      )}
+    </Section>
+  );
+};
+
 const SettingsTab = () => {
   const { act, data } = useBackend<Data>();
-  const { ship_name, memo, joining_allowed, can_rename } = data;
+  const {
+    ship_name,
+    memo,
+    joining_allowed,
+    join_password,
+    can_set_password,
+    crew_only_airlocks,
+    can_rename,
+  } = data;
   const [newName, setNewName] = useState(ship_name ?? '');
   const [newMemo, setNewMemo] = useState(memo ?? '');
+  const [newPassword, setNewPassword] = useState(join_password ?? '');
 
   return (
     <Stack vertical fill>
@@ -277,7 +395,8 @@ const SettingsTab = () => {
             </Stack.Item>
           </Stack>
           <Box mt={1} fontSize="11px" color="label">
-            Ship names must be 2-42 characters. Renaming has a 5-minute cooldown.
+            Ship names must be 2-42 characters. Renaming has a 5-minute
+            cooldown.
           </Box>
         </Section>
       </Stack.Item>
@@ -303,11 +422,93 @@ const SettingsTab = () => {
         </Section>
       </Stack.Item>
 
+      <Stack.Item>
+        <Section title="Join Password">
+          {can_set_password ? (
+            <>
+              <Box mb={1} color="label" fontSize="11px">
+                Players joining from the lobby must enter this password or be
+                approved or invited. Changing it clears all saved join access
+                and approvals. Leave blank and save to remove the lock.
+              </Box>
+              <Stack>
+                <Stack.Item grow>
+                  <Input
+                    fluid
+                    value={newPassword}
+                    maxLength={24}
+                    onChange={(value) => setNewPassword(value ?? '')}
+                    placeholder="No password - anyone may join"
+                  />
+                </Stack.Item>
+                <Stack.Item>
+                  <Button
+                    icon={newPassword ? 'lock' : 'lock-open'}
+                    color="good"
+                    onClick={() =>
+                      act('set_password', { password: newPassword })
+                    }
+                  >
+                    {newPassword ? 'Set Password' : 'Clear'}
+                  </Button>
+                </Stack.Item>
+              </Stack>
+              <Box mt={1}>
+                <Button
+                  icon="user-lock"
+                  color="caution"
+                  disabled={!join_password}
+                  onClick={() => act('reset_join_access')}
+                  tooltip="Clear all saved join access and approvals without changing the password. Players must enter it or be approved or invited again to rejoin. Crew already aboard stay on the roster."
+                >
+                  Reset Join Access
+                </Button>
+              </Box>
+            </>
+          ) : (
+            <Box color="label">
+              Fleet-issued vessels stay open to everyone and cannot be
+              password-locked.
+            </Box>
+          )}
+        </Section>
+      </Stack.Item>
+
+      <Stack.Item>
+        <Section title="Crew-Only Airlocks">
+          {can_set_password ? (
+            <Stack align="center">
+              <Stack.Item grow>
+                <Box color="label" fontSize="11px">
+                  While this is on, the airlocks and windoors aboard this ship
+                  only open for your crew. Anyone else is refused at the door.
+                  Crowbars, emags and cut wires still work as they always did.
+                </Box>
+              </Stack.Item>
+              <Stack.Item>
+                <Button
+                  icon={crew_only_airlocks ? 'lock' : 'lock-open'}
+                  color={crew_only_airlocks ? 'good' : 'bad'}
+                  onClick={() => act('toggle_crew_lock')}
+                >
+                  {crew_only_airlocks ? 'Crew Only' : 'Open To All'}
+                </Button>
+              </Stack.Item>
+            </Stack>
+          ) : (
+            <Box color="label">
+              Fleet-issued vessels stay open to everyone and cannot key their
+              airlocks to the crew.
+            </Box>
+          )}
+        </Section>
+      </Stack.Item>
+
       <Stack.Item grow>
         <Section title="Ship Memo" fill>
           <Box mb={1} color="label" fontSize="11px">
-            This memo is shown to players when they select your ship in the lobby
-            and after they spawn.
+            This memo is shown to players when they select your ship in the
+            lobby and after they spawn.
           </Box>
           <TextArea
             fluid

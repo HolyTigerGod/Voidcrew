@@ -11,11 +11,15 @@
 	)
 
 /datum/surveyed_celestial_object
+	var/recorded_at = 0
 	var/ref_id
+	/// Retain a non-owning identity so deleted celestial references cannot alias new discoveries.
+	var/datum/weakref/source_identity
 	var/object_name
 
 /datum/surveyed_celestial_object/nebula
-	var/datum/gas/gas_type
+	/// Readable name of the gas the nebula carries (shown directly in the survey UI)
+	var/gas_type
 
 /datum/surveyed_celestial_object/asteroid
 	var/list/datum/material/minerals
@@ -38,6 +42,10 @@
 	var/visited = FALSE
 	var/datum/weather/weather_type
 	var/living_player_count
+	/// One plain line about what the planet's zone band does to a landing party, or null.
+	/// Read off the overmap contact (see /obj/structure/overmap/planet/get_hazard_note()),
+	/// so the survey readout and the helm chart never disagree.
+	var/hazard_note
 	// var/list/datum/material/mineral_types
 	// var/list/obj/possible_loot
 	// var/list/datum/map_template/ruin/ruin_type
@@ -46,7 +54,9 @@
 
 /// COPY SECTION
 /datum/surveyed_celestial_object/proc/copy(var/datum/surveyed_celestial_object/new_object)
+	new_object.recorded_at = recorded_at
 	new_object.ref_id = ref_id
+	new_object.source_identity = source_identity
 	new_object.object_name = object_name
 
 /datum/surveyed_celestial_object/nebula/copy(var/datum/surveyed_celestial_object/nebula/new_object)
@@ -55,7 +65,7 @@
 
 /datum/surveyed_celestial_object/asteroid/copy(var/datum/surveyed_celestial_object/asteroid/new_object)
 	. = ..()
-	new_object.minerals = minerals
+	new_object.minerals = minerals?.Copy()
 
 /datum/surveyed_celestial_object/electric_storm/copy(var/datum/surveyed_celestial_object/electric_storm/new_object)
 	. = ..()
@@ -70,6 +80,7 @@
 	new_object.visited = visited
 	new_object.weather_type = weather_type
 	new_object.living_player_count = living_player_count
+	new_object.hazard_note = hazard_note
 
 /datum/surveyed_celestial_object/star/copy(var/datum/surveyed_celestial_object/star/new_object)
 	. = ..()
@@ -83,12 +94,14 @@
 
 /// SET VALUES SECTION
 /datum/surveyed_celestial_object/proc/set_values(var/obj/structure/overmap/object)
-	ref_id = ref(object)
+	recorded_at = world.time
+	source_identity = WEAKREF(object)
+	ref_id = REF(source_identity)
 	object_name = object.name
 
 /datum/surveyed_celestial_object/nebula/set_values(var/obj/structure/overmap/event/nebula/object)
 	. = ..()
-	gas_type = object.gas_type
+	gas_type = object.get_gas_name()
 
 /datum/surveyed_celestial_object/asteroid/set_values(var/obj/structure/overmap/event/meteor/object)
 	. = ..()
@@ -106,10 +119,27 @@
 	. = ..()
 	visited = object.visited
 	weather_type = object.weather_type
-	// Set the number of players found on the planet
+	hazard_note = object.get_hazard_note()
+	// Set the number of players found on the planet (unloaded planets have no mapzone yet)
+	if(!object.mapzone || !length(object.mapzone.z_levels))
+		return
 	var/datum/space_level/level = object.mapzone.z_levels[1]
-	if(level && level.z_value)
-		living_player_count = length(SSmobs.clients_by_zlevel[level.z_value])
+	if(!level || !level.z_value)
+		return
+	var/list/clients_here = SSmobs.clients_by_zlevel[level.z_value]
+	// clients_by_zlevel is keyed by z, and a z-level holds up to four tenants. This is
+	// the pre-raid "is anyone down there" readout, so it has to answer for THIS planet's
+	// slot - counting the co-tenant's crew reports a defended world as occupied and,
+	// worse, an empty one as busy. A planet with no footprint keeps the z-wide count.
+	var/datum/map_footprint/footprint = object.footprint
+	if(!footprint)
+		living_player_count = length(clients_here)
+		return
+	var/inside_count = 0
+	for(var/mob/player as anything in clients_here)
+		if(footprint.contains_turf(get_turf(player)))
+			inside_count++
+	living_player_count = inside_count
 
 /datum/surveyed_celestial_object/star/set_values(var/obj/structure/overmap/star/object)
 	. = ..()
@@ -123,6 +153,12 @@
 	// Trigger the ruin's on_surveyed to reveal its true nature
 	object.on_surveyed()
 
+/// Stable while a completed record retains this weakref, even after the celestial is deleted.
+/obj/structure/overmap/proc/get_survey_identity()
+	if(QDELETED(src))
+		return null
+	return REF(WEAKREF(src))
+
 /// HELPER PROCS SECTION
 /datum/survey_research/proc/update_survey_data(var/obj/structure/overmap/object)
 	var/related_celestial_list = get_related_celestial_list(object.type)
@@ -133,7 +169,7 @@
 		if(/datum/surveyed_celestial_object/nebula)
 			var/datum/surveyed_celestial_object/nebula/celestial
 			for(var/datum/surveyed_celestial_object/nebula/surveyed_nebula in survey_objects_by_type[related_celestial_list])
-				if(surveyed_nebula.ref_id == ref(object))
+				if(surveyed_nebula.ref_id == object.get_survey_identity())
 					celestial = surveyed_nebula
 			if(!celestial)
 				celestial = new()
@@ -144,7 +180,7 @@
 		if(/datum/surveyed_celestial_object/asteroid)
 			var/datum/surveyed_celestial_object/asteroid/celestial
 			for(var/datum/surveyed_celestial_object/asteroid/surveyed_asteroid in survey_objects_by_type[related_celestial_list])
-				if(surveyed_asteroid.ref_id == ref(object))
+				if(surveyed_asteroid.ref_id == object.get_survey_identity())
 					celestial = surveyed_asteroid
 			if(!celestial)
 				celestial = new()
@@ -155,7 +191,7 @@
 		if(/datum/surveyed_celestial_object/electric_storm)
 			var/datum/surveyed_celestial_object/electric_storm/celestial
 			for(var/datum/surveyed_celestial_object/electric_storm/surveyed_electric_storm in survey_objects_by_type[related_celestial_list])
-				if(surveyed_electric_storm.ref_id == ref(object))
+				if(surveyed_electric_storm.ref_id == object.get_survey_identity())
 					celestial = surveyed_electric_storm
 			if(!celestial)
 				celestial = new()
@@ -166,7 +202,7 @@
 		if(/datum/surveyed_celestial_object/emp_storm)
 			var/datum/surveyed_celestial_object/emp_storm/celestial
 			for(var/datum/surveyed_celestial_object/emp_storm/surveyed_emp_storm in survey_objects_by_type[related_celestial_list])
-				if(surveyed_emp_storm.ref_id == ref(object))
+				if(surveyed_emp_storm.ref_id == object.get_survey_identity())
 					celestial = surveyed_emp_storm
 			if(!celestial)
 				celestial = new()
@@ -177,7 +213,7 @@
 		if(/datum/surveyed_celestial_object/planet)
 			var/datum/surveyed_celestial_object/planet/celestial
 			for(var/datum/surveyed_celestial_object/planet/surveyed_planet in survey_objects_by_type[related_celestial_list])
-				if(surveyed_planet.ref_id == ref(object))
+				if(surveyed_planet.ref_id == object.get_survey_identity())
 					celestial = surveyed_planet
 			if(!celestial)
 				celestial = new()
@@ -188,7 +224,7 @@
 		if(/datum/surveyed_celestial_object/star)
 			var/datum/surveyed_celestial_object/star/celestial
 			for(var/datum/surveyed_celestial_object/star/surveyed_star in survey_objects_by_type[related_celestial_list])
-				if(surveyed_star.ref_id == ref(object))
+				if(surveyed_star.ref_id == object.get_survey_identity())
 					celestial = surveyed_star
 			if(!celestial)
 				celestial = new()
@@ -199,7 +235,7 @@
 		if(/datum/surveyed_celestial_object/space_ruin)
 			var/datum/surveyed_celestial_object/space_ruin/celestial
 			for(var/datum/surveyed_celestial_object/space_ruin/surveyed_ruin in survey_objects_by_type[related_celestial_list])
-				if(surveyed_ruin.ref_id == ref(object))
+				if(surveyed_ruin.ref_id == object.get_survey_identity())
 					celestial = surveyed_ruin
 			if(!celestial)
 				celestial = new()
@@ -207,7 +243,7 @@
 			survey_objects_by_type[related_celestial_list] |= celestial
 
 /datum/survey_research/proc/get_related_celestial_list(type)
-	if(type == /obj/structure/overmap/event/nebula)
+	if(type in typesof(/obj/structure/overmap/event/nebula))
 		return "nebulas"
 	if(type in typesof(/obj/structure/overmap/event/meteor))
 		return "asteroids"
@@ -292,6 +328,7 @@
 			visited = object.visited,
 			weather_type = object.weather_type,
 			living_player_count = object.living_player_count,
+			hazard_note = object.hazard_note,
 		)
 		var/object_name = get_unique_name(data["planets"], tgui["object_name"])
 		data["planets"][object_name] = tgui

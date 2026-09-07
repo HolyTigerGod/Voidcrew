@@ -65,10 +65,11 @@
 /datum/techweb_node/ship_combat_shields
 	id = TECHWEB_NODE_SHIP_COMBAT_SHIELDS
 	display_name = "Shuttle Shield Systems"
-	description = "Deflector shield technology that protects shuttles from attackers. Power requirements scale with shuttle size."
+	description = "Deflector shield technology that protects shuttles and outpost claims from attackers. Power requirements scale with shuttle size."
 	prereq_ids = list(TECHWEB_NODE_SHIP_COMBAT)
 	design_ids = list(
 		"ship_shield_generator",
+		"outpost_shield_generator", // player outposts (see player_outposts/outpost_shield.dm)
 	)
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = TECHWEB_TIER_3_POINTS)
 
@@ -104,6 +105,58 @@
 		"ship_data_siphon",
 	)
 	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = TECHWEB_TIER_5_POINTS)
+
+// Assault pods - the boarding half of ship combat. Pods used to be a crafted
+// closet gated behind the survey tree; they belong here, with the tube that
+// throws them and the guns that have to bring the shields down first.
+/datum/techweb_node/ship_combat_assault_pods
+	id = TECHWEB_NODE_SHIP_COMBAT_ASSAULT_PODS
+	display_name = "Assault Pods"
+	description = "Hull-mounted tubes that fire a crewed drop pod at another vessel. The pod cuts its own entry hole through the plating - provided the target's shields are already down."
+	prereq_ids = list(TECHWEB_NODE_SHIP_COMBAT)
+	design_ids = list(
+		"ship_pod_launcher",
+		"ship_assault_pod",
+		"ship_assault_pod_advanced",
+	)
+	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = TECHWEB_TIER_3_POINTS)
+
+// Electronic warfare: the suite plus the basic exploit software. Stronger
+// exploit tiers are never researchable; the black market is the only source.
+/datum/techweb_node/ship_combat_ew
+	id = TECHWEB_NODE_SHIP_COMBAT_EW
+	display_name = "Electronic Warfare Systems"
+	description = "Intrusion hardware for shuttle warfare. Unlocks the electronic warfare suite and basic exploit software for disrupting a targeted ship's systems. Requires weapons lock to operate."
+	prereq_ids = list(TECHWEB_NODE_SHIP_COMBAT)
+	design_ids = list(
+		"ew_suite",
+		"ew_exploit_lights_out",
+		"ew_exploit_phantom_klaxons",
+		"ew_exploit_door_seize",
+	)
+	research_costs = list(TECHWEB_POINT_TYPE_GENERIC = TECHWEB_TIER_4_POINTS)
+
+// ========== SHIP READINESS QUERIES ==========
+// Everything above is gated behind one node, which makes that node a clean
+// stand-in for "this crew can defend itself": no ship_combat, no console, no
+// shields, no guns, no interdictor. The mission boards and the zone advisory
+// both read it to decide how much hand-holding a ship still needs.
+
+/**
+ * Whether this ship has researched Shuttle Warfare Systems.
+ *
+ * Deliberately the gate node rather than a specific weapon: researching it is
+ * the point at which a crew can start building any of this, and a crew that has
+ * it has stopped being a target that cannot answer. Note this reads the techweb
+ * on the ship's own R&D server, so a hull that has not had its server powered
+ * and linked yet reads as unresearched - which is the right answer for a warning
+ * about whether the crew can actually put shields up.
+ */
+/obj/structure/overmap/ship/proc/has_ship_combat_research()
+	var/datum/techweb/web = get_research_web()
+	if(!web)
+		return FALSE
+	return TECHWEB_NODE_SHIP_COMBAT in web.researched_nodes
 
 // ========== COMPUTER BOARD DESIGNS ==========
 
@@ -181,6 +234,26 @@
 	)
 	departmental_flags = DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_SCIENCE
 
+/datum/design/board/ship_pod_launcher
+	name = "Assault Pod Tube Board"
+	desc = "Allows for the construction of a hull-mounted assault pod tube."
+	id = "ship_pod_launcher"
+	build_path = /obj/item/circuitboard/machine/ship_combat/pod_launcher
+	category = list(
+		RND_CATEGORY_MACHINE + RND_SUBCATEGORY_MACHINE_ENGINEERING
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_SCIENCE
+
+/datum/design/board/ew_suite
+	name = "Electronic Warfare Suite Board"
+	desc = "Allows for the construction of an electronic warfare suite. Executes exploit software against targeted ships."
+	id = "ew_suite"
+	build_path = /obj/item/circuitboard/machine/ship_combat/ew_suite
+	category = list(
+		RND_CATEGORY_MACHINE + RND_SUBCATEGORY_MACHINE_ENGINEERING
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_SCIENCE
+
 // ========== MISSILE FRAME DESIGN ==========
 
 /datum/design/ship_missile_frame
@@ -199,6 +272,36 @@
 	departmental_flags = DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SCIENCE
 	research_icon = 'voidcrew/icons/obj/supplypods.dmi'
 	research_icon_state = "missile_nowire"
+
+// ========== ASSAULT POD DESIGNS ==========
+
+/datum/design/ship_assault_pod
+	name = "Orbital Drop Pod"
+	desc = "A one-shot pod for riding down to a celestial body, or for being fired through somebody else's hull out of an assault pod tube. Too heavy to carry - must be dragged."
+	id = "ship_assault_pod"
+	build_type = PROTOLATHE | AWAY_LATHE
+	build_path = /obj/structure/closet/supplypod/drop_pod
+	materials = list(
+		/datum/material/iron = SHEET_MATERIAL_AMOUNT * 15,
+		/datum/material/titanium = SHEET_MATERIAL_AMOUNT * 5,
+	)
+	category = list(
+		RND_CATEGORY_EQUIPMENT + RND_SUBCATEGORY_EQUIPMENT_ENGINEERING
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_SCIENCE
+	research_icon = 'voidcrew/icons/obj/supplypods.dmi'
+	research_icon_state = "darkpod"
+
+/datum/design/ship_assault_pod/advanced
+	name = "Advanced Orbital Drop Pod"
+	desc = "An armoured drop pod, insulated against whatever it lands in. It doesn't pop its own hatch on arrival."
+	id = "ship_assault_pod_advanced"
+	build_path = /obj/structure/closet/supplypod/drop_pod/advanced
+	materials = list(
+		/datum/material/iron = SHEET_MATERIAL_AMOUNT * 15,
+		/datum/material/titanium = SHEET_MATERIAL_AMOUNT * 15,
+		/datum/material/silver = SHEET_MATERIAL_AMOUNT * 5,
+	)
 
 // ========== MISSILE TRACKING CIRCUIT DESIGN ==========
 
@@ -262,5 +365,58 @@
 		/datum/material/uranium = SHEET_MATERIAL_AMOUNT * 15,
 	)
 
-// Chemical missiles now use standard chemical grenades inserted into missile frames
-// No separate warhead needed - players build grenades and insert them directly
+// Chemical missiles use standard chemical grenades or crafted chemical payload cores
+// (/obj/item/bombcore/chemical) inserted into missile frames. No separate warhead
+// design is needed - players build the payload and insert it directly.
+
+// ========== EW EXPLOIT CARTRIDGE DESIGNS ==========
+// Tier 1 software only. Every stronger exploit is black-market stock and has
+// no design on purpose - the Undertow Exchange is the sole supplier.
+
+/datum/design/ew_exploit_lights_out
+	name = "Exploit Cartridge (Blackout)"
+	desc = "Exploit software that drops every light on a targeted ship until the payload expires."
+	id = "ew_exploit_lights_out"
+	build_type = PROTOLATHE | AWAY_LATHE
+	build_path = /obj/item/ew_exploit/lights_out
+	materials = list(
+		/datum/material/iron = SHEET_MATERIAL_AMOUNT * 2,
+		/datum/material/glass = SHEET_MATERIAL_AMOUNT * 1,
+		/datum/material/gold = HALF_SHEET_MATERIAL_AMOUNT,
+	)
+	category = list(
+		RND_CATEGORY_WEAPONS + RND_SUBCATEGORY_WEAPONS_AMMO
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SCIENCE
+
+/datum/design/ew_exploit_phantom_klaxons
+	name = "Exploit Cartridge (Phantom Klaxons)"
+	desc = "Exploit software that sets off a targeted ship's fire alarms and drops its firelocks shipwide."
+	id = "ew_exploit_phantom_klaxons"
+	build_type = PROTOLATHE | AWAY_LATHE
+	build_path = /obj/item/ew_exploit/phantom_klaxons
+	materials = list(
+		/datum/material/iron = SHEET_MATERIAL_AMOUNT * 2,
+		/datum/material/glass = SHEET_MATERIAL_AMOUNT * 1,
+		/datum/material/gold = HALF_SHEET_MATERIAL_AMOUNT,
+	)
+	category = list(
+		RND_CATEGORY_WEAPONS + RND_SUBCATEGORY_WEAPONS_AMMO
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SCIENCE
+
+/datum/design/ew_exploit_door_seize
+	name = "Exploit Cartridge (Bolt Override)"
+	desc = "Exploit software that takes over a targeted ship's airlock bolts, dropping them all or throwing them all open."
+	id = "ew_exploit_door_seize"
+	build_type = PROTOLATHE | AWAY_LATHE
+	build_path = /obj/item/ew_exploit/door_seize
+	materials = list(
+		/datum/material/iron = SHEET_MATERIAL_AMOUNT * 2,
+		/datum/material/glass = SHEET_MATERIAL_AMOUNT * 1,
+		/datum/material/gold = HALF_SHEET_MATERIAL_AMOUNT,
+	)
+	category = list(
+		RND_CATEGORY_WEAPONS + RND_SUBCATEGORY_WEAPONS_AMMO
+	)
+	departmental_flags = DEPARTMENT_BITFLAG_SECURITY | DEPARTMENT_BITFLAG_ENGINEERING | DEPARTMENT_BITFLAG_SCIENCE

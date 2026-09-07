@@ -13,8 +13,9 @@ import { type BooleanLike, classes } from 'tgui-core/react';
 import { capitalizeAll } from 'tgui-core/string';
 
 import { useBackend } from '../../tgui/backend';
-import { Window } from '../../tgui/layouts';
 import { AirLockMainSection } from '../../tgui/interfaces/AirlockElectronics';
+import { Window } from '../../tgui/layouts';
+import { ShipConstructionControls } from './ShipConstructionControls';
 
 interface MaterialData {
   name: string;
@@ -114,6 +115,18 @@ const InfoSection = () => {
   );
 };
 
+// Designs whose sprite is a full 32x32 tile (or a grille-backed window), which needs
+// scaling down to sit next to the 32x32 item icons in the same list.
+const FULL_TILE_DESIGNS = [
+  'full tile window',
+  'full tile reinforced window',
+  'plasma window',
+  'reinforced plasma window',
+  'shuttle window',
+  'plastitanium window',
+  'catwalk',
+];
+
 const DesignSection = () => {
   const { act, data } = useBackend<Data>();
   const { categories = [], selected_category, selected_design } = data;
@@ -158,15 +171,16 @@ const DesignSection = () => {
             mr="10px"
             className={classes(['rcd-tgui32x32', design.icon])}
             style={{
-              transform:
-                design.title === 'full tile window' ||
-                design.title === 'full tile reinforced window' ||
-                design.title === 'catwalk'
-                  ? 'scale(0.7)'
-                  : 'scale(1.0)',
+              transform: FULL_TILE_DESIGNS.includes(design.title)
+                ? 'scale(0.7)'
+                : 'scale(1.0)',
             }}
           />
-          <span>{capitalizeAll(design.title)}</span>
+          <span>
+            {design.title === 'shuttle window'
+              ? 'Titanium Shuttle Window'
+              : capitalizeAll(design.title)}
+          </span>
         </Button>
       ))}
     </Section>
@@ -216,7 +230,7 @@ const MaterialTypeSection = () => {
             options={wallTypes.map((w) => w.name)}
             onSelected={(value) => act('select_wall_type', { type: value })}
           />
-          {selectedWall && (
+          {!!selectedWall && (
             <Box inline ml={1} color="gray">
               ({formatMaterials(selectedWall.materials)})
             </Box>
@@ -229,7 +243,7 @@ const MaterialTypeSection = () => {
             options={floorTypes.map((f) => f.name)}
             onSelected={(value) => act('select_floor_type', { type: value })}
           />
-          {selectedFloor && (
+          {!!selectedFloor && (
             <Box inline ml={1} color="gray">
               ({formatMaterials(selectedFloor.materials)})
             </Box>
@@ -263,14 +277,17 @@ const MaterialTypeSection = () => {
 
 export const ShipRCD = () => {
   return (
-    <Window width={480} height={680} title="Ship RCD">
-      <Window.Content>
+    <Window width={580} height={820} title="Ship RCD">
+      <Window.Content scrollable>
         <Stack vertical fill>
           <Stack.Item>
             <InfoSection />
           </Stack.Item>
           <Stack.Item>
             <MaterialTypeSection />
+          </Stack.Item>
+          <Stack.Item>
+            <ShipConstructionControls />
           </Stack.Item>
           <Stack.Item grow>
             <Stack fill>

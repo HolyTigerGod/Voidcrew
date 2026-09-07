@@ -132,6 +132,17 @@
 	var/mob/living/navigator = usr
 	navigator.navigate()
 
+/// Shortcut to the same personal skill report provided by the View Skills verb.
+/atom/movable/screen/skills
+	name = "view skills and experience"
+	icon = 'icons/hud/screen_midnight.dmi'
+	icon_state = "skills"
+	mouse_over_pointer = MOUSE_HAND_POINTER
+
+/atom/movable/screen/skills/Click()
+	usr.view_skills()
+	return TRUE
+
 /atom/movable/screen/craft
 	name = "crafting menu"
 	icon = 'icons/hud/screen_midnight.dmi'
@@ -792,8 +803,9 @@
 	update_appearance()
 
 /atom/movable/screen/healthdoll/human/update_body_zones()
-	limbs = list()
 	vis_contents.Cut()
+	QDEL_LIST_ASSOC_VAL(limbs)
+	limbs ||= list()
 	var/mob/living/carbon/human/owner = hud.mymob
 	for(var/body_zone in owner.get_all_limbs())
 		var/atom/movable/screen/healthdoll_limb/limb = new(src, null)
@@ -823,6 +835,9 @@
 	for(var/obj/item/bodypart/body_part as anything in owner.bodyparts)
 		var/icon_key = 0
 		var/part_zone = body_part.body_zone
+		// I hate that we "allow" support for more than 2 hands in the codebase
+		if(!limbs[part_zone])
+			continue
 
 		var/list/overridable_key = list(icon_key)
 		if(body_part.bodypart_disabled)

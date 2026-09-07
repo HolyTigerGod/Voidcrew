@@ -11,6 +11,17 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 #define BB_NPC_COMBAT_STATE "npc_combat_state"        // idle/engaging/combat
 #define BB_NPC_RETREAT_REASON "npc_retreat_reason"    // Why we're retreating (siphon_goal, no_weapons)
 #define BB_NPC_LAST_TARGET "npc_last_target"          // Who we were fighting before retreating
+#define BB_NPC_RETREAT_START "npc_retreat_start"      // world.time the current retreat began (stamped by set_combat_state)
+
+/// Hard cap on how long a ship stays in RETREATING before writing the encounter off and
+/// returning to patrol. The distance-based escape (15+ tiles from the last target) is
+/// unreachable for a zone-confined ship whose chaser simply stays nearby - round 4 left
+/// two pirates wedged in RETREATING for 21 hours (156,929 retreat_escape calls against a
+/// single return_to_patrol all round), which emptied the yellow band of working pirates.
+#define NPC_RETREAT_TIME_LIMIT (2 MINUTES)
+
+/// Time to board and claim a disarmed pirate before its unclaimed hull is cleaned up.
+#define NPC_DISARMED_DESPAWN_TIME (10 MINUTES)
 
 // Movement blackboard keys
 #define BB_NPC_MOVEMENT_MODE "npc_movement_mode"      // patrol/chase/return_to_route/roaming
@@ -56,6 +67,9 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 #define BB_NPC_NEGOTIATION_START "npc_negotiation_start"
 #define BB_NPC_PAID_TRIBUTE_SHIPS "npc_paid_tribute_ships"
 #define BB_NPC_FAILED_NEGOTIATION_SHIPS "npc_failed_negotiation_ships"  // Ships that refused/failed negotiation - no second chances
+/// TRUE while hailing a target whose accounts came back empty. The resulting
+/// negotiation demands cargo instead of credits - see /datum/pirate_negotiation/barter_only.
+#define BB_NPC_BROKE_BARTER "npc_broke_barter"
 
 // Negotiation states
 #define NEGOTIATION_PENDING "pending"
@@ -75,6 +89,11 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 #define NEGOTIATION_IMMUNITY_TIME (5 MINUTES)
 #define NEGOTIATION_IMMUNITY_DURATION (5 MINUTES)
 #define NEGOTIATION_WARNING_TIMES list(60, 30, 10)  // Seconds before timeout to warn
+/// Which impatience warning escalates a barter demand. 1 = the first warning, so 2
+/// means "you stalled past the first warning and still haven't put anything on the pad".
+#define NEGOTIATION_BARTER_ESCALATE_WARNING 2
+/// How many extra units get added to a barter demand when it escalates.
+#define NEGOTIATION_BARTER_ESCALATE_AMOUNT 1
 
 // Negotiation payment signal
 #define COMSIG_NEGOTIATION_PAYMENT "negotiation_payment"
@@ -91,6 +110,10 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 #define BB_NPC_BOARDING_WAVE_START_TIME "npc_boarding_wave_start"   // World.time when current wave started
 #define BB_NPC_BOARDING_TARGET_POS "npc_boarding_target_pos"        // Target position at boarding start (for movement detection)
 
+// Crew-wipe tracking (applies to every engaged state, not just phased boarding)
+#define BB_NPC_TARGET_CREW_SEEN "npc_target_crew_seen"  // TRUE once we've read at least one living crewmember aboard the current target
+#define BB_NPC_CREW_WIPE_SINCE "npc_crew_wipe_since"    // World.time we first read zero living crew aboard the target
+
 // Boarding signals
 #define COMSIG_BOARDING_WAVE_COMPLETE "boarding_wave_complete"      // Fired when all boarders in wave die
 #define COMSIG_BOARDING_BOSS_KILLED "boarding_boss_killed"          // Fired when boss is killed
@@ -99,14 +122,41 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 
 // Boarding timing constants
 #define NPC_BOARDING_WAVE_COUNT 3                  // Number of waves before boss
+/// Yellow zone raids are a single crew-scaled wave with no boss - the pirate
+/// leaves once it's repelled. Red keeps the full gauntlet above.
+#define NPC_BOARDING_WAVE_COUNT_YELLOW 1
 #define NPC_BOARDING_WAVE_COOLDOWN (30 SECONDS)    // Time between waves
 #define NPC_BOARDING_DISENGAGE_DELAY (10 SECONDS)  // Time before pirates leave after victory
 #define NPC_BOARDING_WAVE_TIME_LIMIT (3 MINUTES)   // Max time per wave before escalation
 #define NPC_BOARDING_SPACE_CHECK_INTERVAL (10 SECONDS)  // How often to check if boarders fell into space
+/// How long a target has to read as "nobody alive aboard" before we call it a wipe and
+/// break off. A grace window, not a formality: a defib or a crit-recovery inside it puts
+/// the raid straight back on, and it also rides out the momentary zero a ship reads while
+/// it's mid-dock or mid-z-transit.
+#define NPC_CREW_WIPE_CONFIRM_TIME (15 SECONDS)
 
 // Ship combat boarding pod constants
 #define NPC_SHIP_COMBAT_MAX_BOARDERS 10            // Max hostile mobs during ship combat phase
 #define NPC_SHIP_COMBAT_POD_COOLDOWN (15 SECONDS)  // Cooldown between boarding pod volleys
+
+// Boarding difficulty
+/// Health multiplier for crew aboard an NPC ship and for anything it drops on you
+/// in a boarding pod. Applied at the spawn site by scale_npc_ship_pirate_health()
+/// rather than on the mob definitions, because ruin zone spawners, planet spawns
+/// and bounty missions reuse the same faction pirate types and are tuned for their
+/// own zone bands.
+#define NPC_PIRATE_CREW_HEALTH_MULT 1.8
+/// Same, for the faction boss that drops in after the last wave is repelled.
+#define NPC_PIRATE_BOSS_HEALTH_MULT 1.6
+
+// ========== NPC HULL WEALTH ==========
+// What a pirate is carrying in its own accounts, and therefore what a crew can
+// take back off it with a data siphon. Rolled per hull from the faction's
+// hold_credits_min/max at spawn and scaled by the zone it spawned in - a red
+// zone raider is running with a fuller hold than a yellow zone shakedown crew.
+#define NPC_HOLD_ZONE_MULT_GREEN 0.75
+#define NPC_HOLD_ZONE_MULT_YELLOW 1
+#define NPC_HOLD_ZONE_MULT_RED 1.5
 
 // Additional boarding blackboard keys
 #define BB_NPC_BOARDING_LAST_SPACE_CHECK "npc_boarding_space_check"  // Last time we checked for boarders in space
@@ -139,6 +189,22 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 // How long to remember a scanned ship before re-scanning (5 minutes)
 #define NPC_SCAN_MEMORY_TIME (5 MINUTES)
 
+// ========== PARKED-SHIP RECOVERY ==========
+// Both AI subtrees stand down whenever the ship isn't OVERMAP_SHIP_FLYING, and nothing
+// else in the game ever undocks an NPC hull - so before the recovery behavior existed,
+// a single player force-dock (or a crash-land) was a permanent kill switch for that
+// ship's AI. Round 4's Ghostship docked at 04:34 and sat AI-silent for the rest of a
+// 22-hour round with its crew alive aboard.
+
+/// world.time the AI first noticed its ship parked (state != FLYING). Cleared, with a
+/// log line, the first planning pass after the ship is flying again.
+#define BB_NPC_PARKED_SINCE "npc_parked_since"
+/// How long a ship must have been parked before the AI tries to undock and resume
+/// patrol. Longer than the 2 minute interdictor force-dock lockout on purpose, so a
+/// force-docked pirate doesn't launch back out into the face of whoever boarded it the
+/// second its clamps release. INVENTED value, not playtested.
+#define NPC_PARKED_RECOVERY_DELAY (3 MINUTES)
+
 // Movement modes
 #define NPC_MOVEMENT_IDLE "idle"
 #define NPC_MOVEMENT_PATROL "patrol"
@@ -156,6 +222,10 @@ GLOBAL_LIST_EMPTY(patrol_stagger_counter)
 #define NPC_SHIP_OBSTACLE_SCAN_RANGE 1    // How far ahead to scan for obstacles
 #define NPC_SHIP_CIRCUIT_WAYPOINTS 12     // Number of waypoints in patrol circuit
 #define NPC_SHIP_ORBIT_VARIANCE 0.15      // Radius variance for patrol circuits (15%)
+/// How often a hull re-reads its thruster bank for the step budget (see
+/// /obj/structure/overmap/ship/npc/refresh_thrust_state). Movement behaviors tick every
+/// 2-8 seconds, so this costs at most one engine sweep per hull per interval.
+#define NPC_THRUST_RECALC_INTERVAL (2 SECONDS)
 
 // NOTE: Per-ship vars (territory_range, lock_time, cooldowns, speed, acceleration, crew)
 // are now defined on /obj/structure/overmap/ship/npc and its subtypes.
@@ -206,4 +276,3 @@ GLOBAL_LIST_EMPTY(door_to_rooms)   // ship_ref -> list(door_ref -> list(room_id_
 // Room exploration constants
 #define EXPLORATION_MAX_LOCKERS 3                                 // Cap locker targets per room
 #define EXPLORATION_MIN_ROOM_SIZE 4                               // Skip exploration for rooms smaller than this
-

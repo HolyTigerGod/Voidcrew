@@ -110,6 +110,10 @@
 	},
 /obj/structure/cable,
 /obj/effect/turf_decal/tile/neutral/full,
+/obj/item/toy/figure/secofficer{
+	pixel_y = 12;
+	pixel_x = 11
+	},
 /obj/item/folder/white{
 	pixel_y = 3;
 	pixel_x = 3
@@ -158,6 +162,22 @@
 /obj/structure/sign/departments/medbay/alt/directional/south,
 /obj/effect/turf_decal/tile/blue/half,
 /turf/open/floor/iron/edge,
+/area/template_noop)
+"I" = (
+/obj/effect/turf_decal/tile/green/half{
+	dir = 1
+	},
+/obj/structure/closet/crate/freezer/food,
+/obj/item/storage/box/donkpockets,
+/obj/item/storage/box/donkpockets/donkpocketteriyaki,
+/obj/item/food/canned/beans,
+/obj/item/food/canned/beans,
+/obj/item/food/sosjerky,
+/obj/item/food/energybar,
+/obj/item/reagent_containers/condiment/milk,
+/turf/open/floor/iron/edge{
+	dir = 1
+	},
 /area/template_noop)
 "J" = (
 /obj/structure/chair{
@@ -338,7 +358,7 @@ K
 (5,1,1) = {"
 T
 x
-m
+I
 O
 P
 H

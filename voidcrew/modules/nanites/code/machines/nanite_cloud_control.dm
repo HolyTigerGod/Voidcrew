@@ -1,6 +1,6 @@
 /obj/machinery/computer/nanite_cloud_controller
 	name = "nanite cloud controller"
-	desc = "Stores and controls nanite cloud backups."
+	desc = "Stores and controls nanite cloud backups. Cloud networks are local to the ship this console is aboard: nanites can only join one by having their cloud ID set in a nanite chamber on the same ship, and cloud IDs on other ships are separate networks even if the numbers match."
 	icon = 'voidcrew/modules/nanites/icons/research.dmi'
 	icon_state = "nanite_cloud_controller"
 	circuit = /obj/item/circuitboard/computer/nanite_cloud_controller
@@ -26,17 +26,19 @@
 		linked_techweb = null
 
 /obj/machinery/computer/nanite_cloud_controller/multitool_act(mob/living/user, obj/item/multitool/tool)
-	if(!QDELETED(tool.buffer) && istype(tool.buffer, /datum/techweb))
-		if(linked_techweb)
-			if(linked_techweb == tool.buffer)
-				say("Already linked!")
-				return
-			unsync_research_servers()
-
-		linked_techweb = tool.buffer
-		linked_techweb.connected_machines += src //connect new one
-		say("Linked to Server!")
+	if(QDELETED(tool.buffer) || !istype(tool.buffer, /datum/techweb))
 		return TRUE
+	if(!can_link_site_techweb(src, tool.buffer))
+		balloon_alert(user, "server belongs to another site")
+		return FALSE
+	if(linked_techweb == tool.buffer)
+		say("Already linked!")
+		return TRUE
+	unsync_research_servers()
+	linked_techweb = tool.buffer
+	linked_techweb.connected_machines |= src
+	say("Linked to Server!")
+	return TRUE
 
 /obj/machinery/computer/nanite_cloud_controller/attackby(obj/item/I, mob/user)
 	if(istype(I, /obj/item/disk/nanite_program))
@@ -68,9 +70,35 @@
 		if(backup.cloud_id == cloud_id)
 			return backup
 
+/**
+ * Resolves a program index the UI sent us against the backup's live program list.
+ *
+ * The open UI can be seconds out of date - another console deleted the program, or a program was
+ * qdel'd out from under it - and indexing a list past its end is a runtime, so refuse the action
+ * and tell the user instead of throwing.
+ */
+/obj/machinery/computer/nanite_cloud_controller/proc/get_ui_program(datum/component/nanites/nanites, program_id, mob/user)
+	var/index = text2num(program_id)
+	if(isnull(index) || index != round(index) || index < 1 || index > length(nanites?.programs))
+		to_chat(user, span_warning("[src] buzzes: that program is no longer in cloud backup #[current_view]."))
+		return null
+	return nanites.programs[index]
+
+///As get_ui_program, for a rule index inside one program's rule list.
+/obj/machinery/computer/nanite_cloud_controller/proc/get_ui_rule(datum/nanite_program/program, rule_id, mob/user)
+	var/index = text2num(rule_id)
+	if(isnull(index) || index != round(index) || index < 1 || index > length(program?.rules))
+		to_chat(user, span_warning("[src] buzzes: that rule is no longer set on [program ? program.name : "that program"]."))
+		return null
+	return program.rules[index]
+
 /obj/machinery/computer/nanite_cloud_controller/proc/generate_backup(cloud_id, mob/user)
-	if(SSnanites.get_cloud_backup(cloud_id, TRUE))
-		to_chat(user, span_warning("Cloud ID already registered."))
+	// Backups work without research; only carry a disk link while it is local.
+	validate_research_site(linked_techweb)
+	//Clouds are ship-local, so only IDs already used aboard this ship collide.
+	//A console that somehow isn't on a ship checks globally, which is just conservative.
+	if(SSnanites.get_cloud_backup(cloud_id, TRUE, get_service_site(src)))
+		to_chat(user, span_warning("Cloud ID already registered on this ship's network."))
 		return
 
 	var/datum/nanite_cloud_backup/backup = new(src)
@@ -87,6 +115,7 @@
 		ui.open()
 
 /obj/machinery/computer/nanite_cloud_controller/ui_data()
+	validate_research_site(linked_techweb)
 	var/list/data = list()
 
 	if(disk)
@@ -125,6 +154,9 @@
 		data["has_disk"] = FALSE
 
 	data["new_backup_id"] = new_backup_id
+
+	var/obj/structure/overmap/ship/host_ship = get_service_site(src)
+	data["ship_name"] = host_ship ? host_ship.name : null
 
 	data["current_view"] = current_view
 	if(current_view)
@@ -197,7 +229,10 @@
 			. = TRUE
 		if("update_new_backup_value")
 			var/backup_value = text2num(params["value"])
-			new_backup_id = backup_value
+			if(isnull(backup_value)) //a null would get sent straight back to the UI's NumberInput, which can't render it
+				return TRUE
+			new_backup_id = clamp(round(backup_value, 1), 1, 100)
+			. = TRUE
 		if("create_backup")
 			var/cloud_id = new_backup_id
 			if(!isnull(cloud_id))
@@ -226,7 +261,9 @@
 			if(backup)
 				playsound(src, 'sound/machines/terminal/terminal_prompt.ogg', 50, FALSE)
 				var/datum/component/nanites/nanites = backup.nanites
-				var/datum/nanite_program/P = nanites.programs[text2num(params["program_id"])]
+				var/datum/nanite_program/P = get_ui_program(nanites, params["program_id"], usr)
+				if(!P)
+					return TRUE
 				log_game("[key_name(usr)] deleted program [P.name] from cloud #[current_view]")
 				qdel(P)
 			. = TRUE
@@ -239,7 +276,9 @@
 				if(backup)
 					playsound(src, 'sound/machines/terminal/terminal_prompt.ogg', 50, 0)
 					var/datum/component/nanites/nanites = backup.nanites
-					var/datum/nanite_program/P = nanites.programs[text2num(params["program_id"])]
+					var/datum/nanite_program/P = get_ui_program(nanites, params["program_id"], usr)
+					if(!P)
+						return TRUE
 					var/datum/nanite_rule/rule = rule_template.make_rule(P)
 
 					log_game("[key_name(usr)] added rule [rule.display()] to program [P.name] in cloud #[current_view]")
@@ -249,8 +288,12 @@
 			if(backup)
 				playsound(src, 'sound/machines/terminal/terminal_prompt.ogg', 50, 0)
 				var/datum/component/nanites/nanites = backup.nanites
-				var/datum/nanite_program/P = nanites.programs[text2num(params["program_id"])]
-				var/datum/nanite_rule/rule = P.rules[text2num(params["rule_id"])]
+				var/datum/nanite_program/P = get_ui_program(nanites, params["program_id"], usr)
+				if(!P)
+					return TRUE
+				var/datum/nanite_rule/rule = get_ui_rule(P, params["rule_id"], usr)
+				if(!rule)
+					return TRUE
 				rule.remove()
 
 				log_game("[key_name(usr)] removed rule [rule.display()] from program [P.name] in cloud #[current_view]")
@@ -260,7 +303,9 @@
 			if(backup)
 				playsound(src, 'sound/machines/terminal/terminal_prompt.ogg', 50, FALSE)
 				var/datum/component/nanites/nanites = backup.nanites
-				var/datum/nanite_program/P = nanites.programs[text2num(params["program_id"])]
+				var/datum/nanite_program/P = get_ui_program(nanites, params["program_id"], usr)
+				if(!P)
+					return TRUE
 				P.all_rules_required = !P.all_rules_required
 				log_game("[key_name(usr)] edited rule logic for program [P.name] into [P.all_rules_required ? "All" : "Any"] in cloud #[current_view]")
 				. = TRUE

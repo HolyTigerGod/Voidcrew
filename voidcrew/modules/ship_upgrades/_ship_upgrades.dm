@@ -51,6 +51,11 @@ GLOBAL_LIST_EMPTY(ship_themes)
 	/// Can be a single string (e.g., "medical") or a list (e.g., list("medical", "syndicate"))
 	/// Modules without for_theme won't appear in the upgrade selector for themed ships.
 	var/for_theme
+	/// Extra job slots this module contributes to the ship's crew.
+	/// Same format as /datum/ship_theme job_slots: list of list(name, outfit, category, slots, ...).
+	/// Merged into the ship's job list at launch, after the theme's own slots
+	/// (e.g. a hydroponics module adds its Botanist). Mention added jobs in desc.
+	var/list/job_slots_add
 
 /datum/ship_upgrade_module/New()
 	. = ..()
@@ -223,14 +228,98 @@ GLOBAL_VAR_INIT(ship_upgrades_initialized, FALSE)
 	return filtered
 
 /**
+ * Collect the raw job-slot definitions contributed by a ship's effective modules.
+ *
+ * For each upgrade slot, the effective module is the player's selection if one exists,
+ * otherwise the slot's default module - mirroring what modular_map_root/ship_upgrade
+ * will actually load. Returns a list of job definition lists (same format as theme
+ * job_slots), ready to append to a list fed to assemble_job_slots_from_list().
+ */
+/proc/get_module_job_definitions(ship_template_type, list/upgrade_selections, list/slot_ids)
+	var/list/definitions = list()
+	if(!length(slot_ids))
+		return definitions
+	for(var/slot_key in slot_ids)
+		var/datum/ship_upgrade_module/module = upgrade_selections?[slot_key]
+		if(!module)
+			module = get_default_module_for_ship_slot(ship_template_type, slot_key)
+		if(!istype(module) || !length(module.job_slots_add))
+			continue
+		definitions += module.job_slots_add
+	return definitions
+
+/**
+ * The upgrade slots a hull actually loads under a given theme.
+ *
+ * Themes may override the hull's own slot list, so this mirrors what the upgrade
+ * selector's get_current_slot_ids() resolves to.
+ */
+/proc/get_upgrade_slot_ids_for_theme(datum/map_template/shuttle/voidcrew/template, datum/ship_theme/theme)
+	if(length(theme?.upgrade_slot_ids))
+		return theme.upgrade_slot_ids
+	return template?.upgrade_slot_ids || list()
+
+/**
+ * Every module registered for one slot on a hull that the given theme allows.
+ *
+ * Returns: list of /datum/ship_upgrade_module
+ */
+/proc/get_modules_for_ship_slot(ship_template_type, theme_id, slot_key)
+	var/list/candidates = list()
+	var/list/available = get_modules_for_ship_theme(ship_template_type, theme_id)
+	for(var/module_id in available)
+		var/datum/ship_upgrade_module/module = available[module_id]
+		if(module.slot == slot_key)
+			candidates += module
+	return candidates
+
+/**
+ * Roll a random theme for a hull.
+ *
+ * Unlock state and part cost are ignored on purpose: this is for ships nobody paid
+ * for (the roundstart fleet, admin spawns), not for anything sold in the shop.
+ */
+/proc/roll_random_ship_theme(ship_template_type)
+	var/list/themes = get_themes_for_ship(ship_template_type)
+	if(!length(themes))
+		return null
+	return themes[pick(themes)]
+
+/**
+ * Roll a random module into every upgrade slot on a hull, in the format create_ship
+ * expects (slot_key -> /datum/ship_upgrade_module).
+ *
+ * Cost is ignored for the same reason as roll_random_ship_theme(). A slot with no
+ * module valid for the theme is left out of the result, which makes
+ * modular_map_root/ship_upgrade fall back to that slot's default module.
+ */
+/proc/roll_random_upgrade_selections(datum/map_template/shuttle/voidcrew/template, datum/ship_theme/theme)
+	var/list/selections = list()
+	if(!template?.has_upgrade_slots)
+		return selections
+
+	for(var/slot_key in get_upgrade_slot_ids_for_theme(template, theme))
+		var/list/candidates = get_modules_for_ship_slot(template.type, theme?.id, slot_key)
+		if(!length(candidates))
+			continue
+		selections[slot_key] = pick(candidates)
+
+	return selections
+
+/**
  * Check if a module is available for a specific theme
  *
- * Modules MUST have for_theme set to appear for themed ships.
- * for_theme can be a single string or a list of theme IDs.
+ * On a themed hull, modules MUST have for_theme set to appear, and it can be a single
+ * theme id or a list of them. On a hull with no themes the rule inverts: the modules
+ * that belong to it are exactly the ones declaring no theme, which is what
+ * get_modules_for_ship_theme() has always done for the same case.
  */
 /proc/is_module_available_for_theme(datum/ship_upgrade_module/module, theme_id)
 	if(!module)
 		return FALSE
+	// Themeless hull - a module earns its place by declaring no theme
+	if(!theme_id)
+		return !module.for_theme
 	// No theme specified = module doesn't appear for themed ships
 	if(!module.for_theme)
 		return FALSE

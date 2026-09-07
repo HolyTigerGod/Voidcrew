@@ -1,0 +1,2353 @@
+//MAP CONVERTED BY dmm2tgm.py THIS HEADER COMMENT PREVENTS RECONVERSION, DO NOT REMOVE
+"aa" = (
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"ab" = (
+/obj/structure/sign/directions/supply{
+	dir = 8;
+	name = "Undertow Exchange";
+	desc = "Hangar elevator east. Vex and the Exchange west. The Dregs north."
+	},
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"ac" = (
+/obj/structure/sign/warning/vacuum/directional/north{
+	name = "EVA gantry";
+	desc = "No berth access. Suit up before cycling."
+	},
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"ad" = (
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"ae" = (
+/obj/machinery/barsign,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"af" = (
+/obj/structure/chair/wood{
+	dir = 8
+	},
+/obj/effect/spawner/random/trash/cigbutt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"ag" = (
+/obj/structure/sign/poster/contraband/random,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"ah" = (
+/obj/structure/chair/sofa/bench/left{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"ai" = (
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"aj" = (
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"ak" = (
+/obj/machinery/light/warm/directional/north,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"al" = (
+/obj/machinery/door/airlock/outpost{
+	name = "Hangar Elevator Lobby"
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"am" = (
+/obj/effect/decal/cleanable/ash,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"an" = (
+/obj/machinery/door/airlock/outpost{
+	name = "North EVA Exterior"
+	},
+/obj/effect/mapping_helpers/airlock/cyclelink_helper{
+	dir = 2
+	},
+/obj/structure/fans/tiny,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"ao" = (
+/obj/effect/decal/cleanable/dirt/dust,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"ap" = (
+/obj/item/kirbyplants/random,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aq" = (
+/obj/structure/noticeboard/directional/north,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"ar" = (
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"as" = (
+/obj/effect/spawner/random/trash/graffiti,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"at" = (
+/obj/machinery/door/airlock/outpost{
+	name = "South EVA Exterior"
+	},
+/obj/effect/mapping_helpers/airlock/cyclelink_helper{
+	dir = 1
+	},
+/obj/structure/fans/tiny,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"au" = (
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"av" = (
+/obj/structure/rack,
+/obj/item/clothing/mask/breath,
+/obj/item/tank/internals/oxygen{
+	pixel_x = 3
+	},
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aw" = (
+/obj/machinery/door/airlock/outpost{
+	name = "South EVA Access"
+	},
+/obj/effect/mapping_helpers/airlock/cyclelink_helper{
+	dir = 2
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"ax" = (
+/obj/structure/lattice/catwalk,
+/obj/machinery/porta_turret/outpost,
+/turf/open/space/basic,
+/area/space)
+"ay" = (
+/obj/effect/landmark/outpost_elevator_alcove,
+/turf/open/indestructible/light,
+/area/voidcrew/trader_outpost)
+"az" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 1
+	},
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aA" = (
+/obj/machinery/door/airlock/outpost{
+	name = "Patch-Up Clinic"
+	},
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"aB" = (
+/obj/machinery/porta_turret/outpost,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aC" = (
+/turf/template_noop,
+/area/template_noop)
+"aD" = (
+/obj/machinery/door/airlock/outpost{
+	name = "North EVA Access"
+	},
+/obj/effect/mapping_helpers/airlock/cyclelink_helper{
+	dir = 1
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"aE" = (
+/obj/structure/sign/departments/medbay/alt,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"aF" = (
+/obj/structure/lattice/catwalk,
+/obj/structure/marker_beacon/burgundy,
+/turf/open/space/basic,
+/area/space)
+"aG" = (
+/obj/structure/chair/sofa/bench/solo{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aH" = (
+/obj/effect/turf_decal/caution{
+	dir = 2
+	},
+/obj/machinery/light/small/red/dim/directional/west,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"aI" = (
+/obj/structure/table/reinforced/plastitaniumglass{
+	name = "customs desk";
+	desc = "Manifests are checked here before consignments enter the Exchange."
+	},
+/obj/item/clipboard{
+	pixel_x = -5;
+	pixel_y = 6
+	},
+/obj/item/pen{
+	pixel_x = 6;
+	pixel_y = 3
+	},
+/obj/effect/turf_decal/delivery,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aJ" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 2
+	},
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aK" = (
+/obj/item/radio/intercom/directional/north,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aL" = (
+/obj/structure/lattice/catwalk,
+/turf/open/space/basic,
+/area/space)
+"aM" = (
+/obj/structure/chair/sofa/bench{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aN" = (
+/obj/effect/spawner/random/trash/garbage,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aO" = (
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"aP" = (
+/obj/effect/turf_decal/tile/dark_red/fourcorners,
+/obj/effect/turf_decal/trimline/red/filled/line{
+	dir = 1
+	},
+/obj/effect/turf_decal/trimline/red/filled/line{
+	dir = 2
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"aQ" = (
+/obj/structure/chair/sofa/bench/right{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aR" = (
+/obj/effect/decal/cleanable/dirt,
+/obj/effect/spawner/random/trash/cigbutt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aS" = (
+/obj/machinery/light/red/dim/directional/south,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aT" = (
+/obj/structure/sign/warning/vacuum/directional/south{
+	name = "EVA gantry";
+	desc = "No berth access. Suit up before cycling."
+	},
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"aU" = (
+/obj/structure/extinguisher_cabinet/directional/north,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aV" = (
+/turf/closed/indestructible/opsglass,
+/area/voidcrew/trader_outpost)
+"aW" = (
+/obj/effect/turf_decal/tile/dark_red/fourcorners,
+/obj/effect/turf_decal/trimline/red/filled/line{
+	dir = 4
+	},
+/obj/effect/turf_decal/trimline/red/filled/line{
+	dir = 8
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"aX" = (
+/obj/effect/landmark/outpost_elevator_alcove,
+/obj/machinery/outpost_elevator/directional/south,
+/turf/open/indestructible/light,
+/area/voidcrew/trader_outpost)
+"aY" = (
+/obj/structure/filingcabinet{
+	name = "dead-drop locker";
+	desc = "The drawers are labeled in codes rather than names."
+	},
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"aZ" = (
+/obj/effect/turf_decal/caution{
+	dir = 1
+	},
+/obj/effect/decal/cleanable/ash,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"bg" = (
+/obj/structure/sink/directional/north,
+/turf/open/indestructible/white/textured,
+/area/voidcrew/trader_outpost)
+"bn" = (
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"bL" = (
+/obj/machinery/newscaster/directional/east{
+	name = "Undertow market feed"
+	},
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 4
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"bO" = (
+/obj/machinery/cryo_cell,
+/obj/effect/turf_decal/stripes/line{
+	dir = 8
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"ci" = (
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"ck" = (
+/obj/effect/decal/cleanable/cobweb,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"cJ" = (
+/obj/machinery/light/warm/directional/north,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"cL" = (
+/obj/machinery/chrome_cradle,
+/turf/open/indestructible/light{
+	light_color = "#ff2079"
+	},
+/area/voidcrew/trader_outpost)
+"dk" = (
+/obj/effect/decal/cleanable/dirt/dust,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"dm" = (
+/obj/structure/table/glass,
+/obj/item/stack/sticky_tape/surgical{
+	pixel_x = -6;
+	pixel_y = 4
+	},
+/obj/item/stack/medical/bone_gel{
+	pixel_x = 6;
+	pixel_y = 4
+	},
+/obj/item/clothing/mask/surgical{
+	pixel_y = -5
+	},
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"dq" = (
+/obj/effect/decal/cleanable/blood/old,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"dw" = (
+/obj/structure/rack{
+	name = "returns rack";
+	desc = "Scuffed tags mark goods already moved off-site."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"dz" = (
+/obj/structure/table/reinforced/plastitaniumglass,
+/obj/machinery/door/poddoor/shutters/preopen{
+	id = "undertow_bar";
+	dir = 4;
+	name = "Bar Shutters"
+	},
+/obj/item/reagent_containers/cup/glass/bottle/whiskey{
+	pixel_x = 4;
+	pixel_y = 7
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"dW" = (
+/obj/structure/chair/wood{
+	dir = 8
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"ez" = (
+/obj/structure/table/reinforced,
+/obj/item/tank/internals/anesthetic{
+	pixel_x = -6;
+	pixel_y = 4
+	},
+/obj/item/tank/internals/anesthetic{
+	pixel_x = 1;
+	pixel_y = 4
+	},
+/obj/item/tank/internals/oxygen{
+	pixel_x = 7;
+	pixel_y = 4
+	},
+/obj/item/clothing/mask/breath/medical{
+	pixel_x = -4;
+	pixel_y = -5
+	},
+/obj/item/clothing/mask/breath/medical{
+	pixel_x = 5;
+	pixel_y = -5
+	},
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"eC" = (
+/obj/item/radio/intercom/directional/east,
+/obj/effect/turf_decal/trimline/blue/filled/line{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"eQ" = (
+/obj/machinery/defibrillator_mount/directional/west,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"fL" = (
+/obj/effect/decal/cleanable/dirt/dust,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"fS" = (
+/obj/structure/table/glass,
+/obj/item/reagent_containers/cup/beaker/cryoxadone{
+	pixel_x = -6;
+	pixel_y = 10
+	},
+/obj/item/reagent_containers/cup/beaker/cryoxadone{
+	pixel_x = 6;
+	pixel_y = 10
+	},
+/obj/item/reagent_containers/cup/beaker/cryoxadone{
+	pixel_x = -6;
+	pixel_y = 5
+	},
+/obj/item/reagent_containers/cup/beaker/cryoxadone{
+	pixel_x = 6;
+	pixel_y = 5
+	},
+/obj/item/reagent_containers/dropper{
+	pixel_y = -5
+	},
+/obj/item/storage/pill_bottle/mannitol{
+	pixel_x = 8;
+	pixel_y = -5
+	},
+/obj/item/radio/intercom/directional/west,
+/obj/machinery/light/cold/directional/north,
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"go" = (
+/obj/machinery/atmospherics/components/unary/portables_connector/visible{
+	dir = 2
+	},
+/obj/machinery/portable_atmospherics/canister/anesthetic_mix,
+/obj/machinery/light/cold/directional/east,
+/obj/effect/turf_decal/stripes/line{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"gK" = (
+/obj/effect/decal/cleanable/glass,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"hc" = (
+/obj/effect/turf_decal/trimline/blue/filled/warning{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"hd" = (
+/obj/machinery/vending/sustenance,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"hH" = (
+/obj/structure/chair/wood{
+	dir = 4
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"hV" = (
+/obj/structure/rack,
+/obj/effect/spawner/random/food_or_drink/booze,
+/obj/item/rag{
+	pixel_x = 5;
+	pixel_y = 4
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"ip" = (
+/obj/structure/rack,
+/obj/item/clothing/mask/breath,
+/obj/item/tank/internals/oxygen{
+	pixel_x = 3
+	},
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"iQ" = (
+/obj/machinery/light/warm/dim/directional/east,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"jc" = (
+/obj/machinery/computer/operating{
+	dir = 2
+	},
+/obj/machinery/light/cold/directional/north,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"ji" = (
+/obj/structure/table/reinforced/plastitaniumglass,
+/obj/effect/spawner/random/food_or_drink/booze,
+/obj/item/flashlight/flare/candle/infinite{
+	pixel_x = -5;
+	pixel_y = 4
+	},
+/obj/item/reagent_containers/cup/glass/drinkingglass{
+	pixel_x = 5;
+	pixel_y = 4
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"jn" = (
+/obj/machinery/space_heater,
+/obj/effect/decal/cleanable/cobweb/cobweb2,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"jt" = (
+/obj/structure/noticeboard/directional/east{
+	name = "confiscation notices"
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"jE" = (
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"jX" = (
+/obj/structure/chair{
+	dir = 4
+	},
+/obj/effect/turf_decal/tile/blue/anticorner/contrasted,
+/obj/structure/sign/eyechart/directional/west,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"kk" = (
+/obj/effect/turf_decal/tile/dark_red/fourcorners,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"kF" = (
+/obj/structure/table/wood,
+/obj/effect/spawner/random/food_or_drink/cups,
+/obj/item/reagent_containers/cup/glass/drinkingglass{
+	pixel_x = -5;
+	pixel_y = 5
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"kM" = (
+/obj/machinery/light/warm/directional/east,
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 4
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"kU" = (
+/obj/structure/chair/wood{
+	dir = 1
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"mx" = (
+/obj/effect/light_emitter{
+	light_color = "#ff2079";
+	set_cap = 2;
+	set_luminosity = 4
+	},
+/obj/effect/decal/cleanable/blood/oil,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"mG" = (
+/obj/machinery/vending/boozeomat/syndicate,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"mJ" = (
+/obj/machinery/stasis{
+	dir = 4
+	},
+/obj/machinery/defibrillator_mount/directional/north,
+/obj/machinery/light/cold/directional/north,
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"nl" = (
+/obj/machinery/light/warm/dim/directional/north,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"nm" = (
+/obj/machinery/iv_drip,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"nA" = (
+/obj/machinery/iv_drip/saline,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"nG" = (
+/obj/structure/chair/stool/bar{
+	dir = 1
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"nU" = (
+/obj/machinery/door/airlock/outpost/glass{
+	name = "The Chop Shop"
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"om" = (
+/mob/living/basic/outpost_trader/ripperdoc,
+/turf/open/indestructible/light,
+/area/voidcrew/trader_outpost)
+"pr" = (
+/obj/machinery/smartfridge/organ/outpost,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"ps" = (
+/obj/structure/closet/crate,
+/obj/effect/decal/cleanable/cobweb,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"pB" = (
+/obj/structure/filingcabinet{
+	name = "dead-drop locker";
+	desc = "The drawers are labeled in codes rather than names."
+	},
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"pD" = (
+/obj/machinery/vending/medical,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"qd" = (
+/obj/machinery/door/airlock/outpost{
+	name = "Cryogenics Bay"
+	},
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"se" = (
+/obj/machinery/cryo_cell,
+/obj/effect/turf_decal/stripes/line{
+	dir = 4
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"st" = (
+/obj/machinery/door/airlock/outpost{
+	name = "Trauma Theatre"
+	},
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"sC" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 4
+	},
+/obj/effect/decal/cleanable/dirt/dust,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"tP" = (
+/mob/living/basic/outpost_trader/dregs_barkeep,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"uq" = (
+/obj/structure/sink/directional/south{
+	name = "bar sink"
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"ut" = (
+/obj/structure/chair/sofa/corp/right{
+	dir = 1
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"uC" = (
+/obj/structure/extinguisher_cabinet/directional/west,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"uM" = (
+/obj/structure/showcase/fakeid,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"vb" = (
+/obj/machinery/light/floor,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"ve" = (
+/obj/structure/chair/wood{
+	dir = 4
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"vk" = (
+/obj/structure/reagent_dispensers/beerkeg,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"vl" = (
+/obj/structure/chair{
+	dir = 4
+	},
+/obj/effect/turf_decal/tile/blue/anticorner/contrasted,
+/obj/machinery/light/cold/directional/west,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"vm" = (
+/obj/machinery/sleeper/outpost{
+	dir = 4
+	},
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"vn" = (
+/obj/structure/table/reinforced,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"vB" = (
+/obj/structure/showcase/cyborg/old,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"vK" = (
+/obj/machinery/jukebox/disco/indestructible,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"we" = (
+/obj/structure/table/reinforced/plastitaniumglass,
+/obj/machinery/door/poddoor/shutters/preopen{
+	id = "undertow_bar";
+	dir = 4;
+	name = "Bar Shutters"
+	},
+/obj/structure/desk_bell{
+	pixel_x = -6;
+	pixel_y = 4
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"ww" = (
+/obj/structure/displaycase/chop_shop/gorilla,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"wK" = (
+/obj/effect/spawner/random/trash/grime,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"wY" = (
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"xe" = (
+/mob/living/basic/outpost_trader,
+/turf/open/indestructible/light,
+/area/voidcrew/trader_outpost)
+"xj" = (
+/obj/structure/table/reinforced/plastitaniumglass,
+/obj/effect/spawner/random/food_or_drink/cups,
+/obj/item/reagent_containers/cup/glass/bottle/whiskey{
+	pixel_x = -4;
+	pixel_y = 6
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"xF" = (
+/obj/structure/chair/wood{
+	dir = 8
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"xL" = (
+/obj/structure/chair/wood{
+	dir = 4
+	},
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"yd" = (
+/obj/structure/closet/crate{
+	name = "empty intake crate";
+	desc = "A cleared customs crate with its manifest torn away."
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"yo" = (
+/obj/machinery/light/red/dim/directional/south,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"yw" = (
+/obj/structure/table/glass,
+/obj/item/healthanalyzer{
+	pixel_x = -6;
+	pixel_y = 5
+	},
+/obj/item/healthanalyzer{
+	pixel_x = 6;
+	pixel_y = 5
+	},
+/obj/item/storage/box/gloves{
+	pixel_y = -5
+	},
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"yK" = (
+/obj/machinery/porta_turret/outpost,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"yS" = (
+/obj/machinery/medical_kiosk,
+/obj/machinery/light_switch/directional/south,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"zf" = (
+/obj/machinery/light/cold/directional/west,
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"zr" = (
+/obj/machinery/vending/cigarette/syndicate,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Av" = (
+/obj/machinery/light/warm/dim/directional/south,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"AU" = (
+/obj/structure/table/reinforced/plastitaniumglass{
+	name = "manifest desk";
+	desc = "A scarred worktop for intake forms and consignment tags."
+	},
+/obj/item/clipboard{
+	pixel_x = -5;
+	pixel_y = 6
+	},
+/obj/item/pen{
+	pixel_x = 6;
+	pixel_y = 3
+	},
+/obj/effect/turf_decal/delivery,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Bt" = (
+/obj/machinery/light/floor,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"BJ" = (
+/obj/machinery/portable_atmospherics/canister/oxygen,
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"BP" = (
+/obj/machinery/light/blacklight/directional/east,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Cg" = (
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden{
+	dir = 1
+	},
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"Cj" = (
+/obj/machinery/vending/hotdog,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Cq" = (
+/obj/structure/closet/crate{
+	name = "intake crate";
+	desc = "Empty, tagged, and waiting for the next consignment."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"CO" = (
+/obj/structure/chair/sofa/corp{
+	dir = 1
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"DM" = (
+/obj/structure/displaycase/chop_shop/cascade,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"DU" = (
+/obj/effect/turf_decal/caution{
+	dir = 2
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"Eu" = (
+/obj/effect/turf_decal/arrows/red{
+	dir = 8
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"EN" = (
+/obj/structure/displaycase/chop_shop/mantis,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Fe" = (
+/obj/effect/decal/cleanable/dirt,
+/obj/effect/spawner/random/trash/cigbutt,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"FI" = (
+/obj/effect/spawner/random/trash/grime,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Ge" = (
+/obj/structure/table/glass,
+/obj/item/storage/medkit/regular{
+	pixel_x = -6;
+	pixel_y = 4
+	},
+/obj/item/stack/medical/gauze{
+	pixel_x = 6;
+	pixel_y = 5
+	},
+/obj/item/stack/medical/suture{
+	pixel_x = -5;
+	pixel_y = -5
+	},
+/obj/item/stack/medical/mesh{
+	pixel_x = 6;
+	pixel_y = -5
+	},
+/obj/machinery/light/cold/directional/south,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Gn" = (
+/obj/structure/table/wood,
+/obj/effect/spawner/random/food_or_drink/booze,
+/obj/item/reagent_containers/cup/glass/drinkingglass{
+	pixel_x = 5;
+	pixel_y = 4
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Gs" = (
+/obj/structure/rack{
+	name = "bulk inventory rack";
+	desc = "Painted lot numbers mark an otherwise empty rack."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"GA" = (
+/obj/machinery/shower/directional/east{
+	name = "surgical scrub shower"
+	},
+/turf/open/indestructible/white/textured,
+/area/voidcrew/trader_outpost)
+"GI" = (
+/obj/structure/table/glass,
+/obj/effect/spawner/surgery_tray/full,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"GN" = (
+/obj/structure/rack{
+	name = "energy escrow rack";
+	desc = "Only numbered clamps remain. Vex keeps the real merchandise elsewhere."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"GV" = (
+/obj/machinery/light/blacklight/directional/south,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"HP" = (
+/obj/machinery/atmospherics/pipe/smart/simple/cyan/visible{
+	dir = 4
+	},
+/obj/effect/turf_decal/trimline/blue/filled/line{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Ih" = (
+/obj/structure/closet/outpost_medical,
+/obj/effect/turf_decal/bot,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Il" = (
+/obj/machinery/button/door/directional/west{
+	id = "undertow_bar";
+	name = "Bar Shutters"
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Is" = (
+/obj/machinery/vending/wallmed/directional/south,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"IO" = (
+/obj/effect/turf_decal/loading_area{
+	dir = 1
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Jz" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 2
+	},
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"JY" = (
+/obj/structure/table/reinforced/plastitaniumglass{
+	name = "seized-goods table";
+	desc = "Everything valuable has already been logged and moved off-site."
+	},
+/obj/effect/turf_decal/delivery,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"KQ" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 4
+	},
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"KU" = (
+/obj/structure/table/optable,
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Lu" = (
+/obj/machinery/atmospherics/components/trinary/filter/atmos/flipped/co2{
+	dir = 8
+	},
+/obj/effect/turf_decal/stripes/line{
+	dir = 2
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"LB" = (
+/obj/effect/turf_decal/bot,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"LK" = (
+/obj/structure/rack{
+	name = "claim rack";
+	desc = "Only numbered claim tags remain."
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Mu" = (
+/obj/machinery/iv_drip,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"My" = (
+/obj/effect/spawner/random/trash/garbage,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"MD" = (
+/obj/structure/showcase/katana,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"ME" = (
+/obj/structure/showcase/fakesec,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"MG" = (
+/obj/machinery/porta_turret/outpost,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"MJ" = (
+/obj/machinery/newscaster/directional/east{
+	name = "Dregs market feed"
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"MP" = (
+/obj/structure/rack,
+/obj/effect/spawner/random/maintenance/three,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"MY" = (
+/obj/machinery/light/warm/directional/south,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Nk" = (
+/obj/item/kirbyplants/random,
+/obj/machinery/light/cold/directional/east,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"NP" = (
+/obj/machinery/light/blacklight/directional/north,
+/obj/effect/decal/cleanable/blood/oil,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Oq" = (
+/turf/open/indestructible/white/textured,
+/area/voidcrew/trader_outpost)
+"Oz" = (
+/obj/effect/turf_decal/tile/blue/fourcorners,
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Pc" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 2
+	},
+/obj/item/radio/intercom/directional/south,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Pi" = (
+/obj/effect/decal/cleanable/dirt,
+/obj/effect/spawner/random/trash/cigbutt,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Pn" = (
+/obj/structure/chair/wood{
+	dir = 2
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"PM" = (
+/obj/structure/showcase/mecha/marauder,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"Qf" = (
+/obj/effect/decal/cleanable/cobweb/cobweb2,
+/obj/structure/closet/crate{
+	name = "forgotten intake crate";
+	desc = "An empty crate abandoned after its lot was cleared."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"Ql" = (
+/mob/living/basic/outpost_trader/clinic_doctor,
+/obj/effect/turf_decal/box/white{
+	color = "#52B4E9"
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"QV" = (
+/obj/structure/filingcabinet,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"RI" = (
+/obj/structure/closet/crate{
+	name = "sealed inventory crate";
+	desc = "A numbered shell crate. The actual merchandise is held off-site."
+	},
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"RM" = (
+/obj/effect/decal/cleanable/dirt,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"RY" = (
+/obj/structure/bed/medical/emergency{
+	dir = 4
+	},
+/obj/effect/turf_decal/trimline/blue/filled/warning{
+	dir = 2
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Sp" = (
+/obj/effect/decal/cleanable/cobweb,
+/obj/effect/spawner/random/trash/grime,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Sq" = (
+/obj/structure/sign/warning/cold_temp,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"SI" = (
+/turf/open/indestructible/light,
+/area/voidcrew/trader_outpost)
+"SS" = (
+/obj/machinery/light/cold/directional/north,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+"Tt" = (
+/obj/effect/decal/cleanable/cobweb/cobweb2,
+/obj/effect/spawner/random/trash/garbage,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"TD" = (
+/mob/living/basic/outpost_loiterer/off_duty_pirate,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"TM" = (
+/obj/structure/chair/sofa/corp/left{
+	dir = 1
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"Uq" = (
+/obj/effect/spawner/random/trash/mess,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"UL" = (
+/obj/effect/turf_decal/trimline/blue/filled/line{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"Vr" = (
+/obj/structure/closet/crate{
+	name = "seized parcel";
+	desc = "An empty shell crate stamped CLEARED BY VEX."
+	},
+/obj/effect/turf_decal/delivery,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Vy" = (
+/obj/item/radio/intercom/directional/east,
+/obj/effect/turf_decal/tile/blue/half/contrasted{
+	dir = 1
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"VB" = (
+/obj/effect/spawner/random/trash/grime,
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"VM" = (
+/obj/structure/table/wood/poker,
+/obj/item/toy/cards/deck{
+	pixel_y = 3
+	},
+/obj/effect/spawner/random/entertainment/money_small,
+/obj/effect/spawner/random/entertainment/lighter,
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"VR" = (
+/obj/effect/turf_decal/tile/dark_red/half/contrasted{
+	dir = 2
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Wb" = (
+/obj/structure/table/wood,
+/obj/effect/spawner/random/food_or_drink/booze,
+/obj/item/flashlight/flare/candle/infinite{
+	pixel_x = 5;
+	pixel_y = 5
+	},
+/turf/open/indestructible/dark,
+/area/voidcrew/trader_outpost)
+"Wf" = (
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden{
+	dir = 1
+	},
+/obj/structure/sign/warning/cold_temp,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"Wi" = (
+/obj/machinery/atmospherics/components/unary/passive_vent{
+	dir = 2;
+	 name = "cryogenics exhaust"
+	},
+/obj/structure/lattice,
+/turf/template_noop,
+/area/template_noop)
+"WO" = (
+/obj/machinery/light/small/directional/east{
+	bulb_colour = "#ff2079"
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"WQ" = (
+/obj/structure/closet/crate/freezer/surplus_limbs,
+/obj/effect/turf_decal/delivery/white{
+	color = "#52B4E9"
+	},
+/turf/open/indestructible/hoteltile,
+/area/voidcrew/trader_outpost)
+"WW" = (
+/obj/structure/mirror/directional/east,
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Xr" = (
+/obj/structure/table/reinforced/plastitaniumglass,
+/obj/machinery/door/poddoor/shutters/preopen{
+	id = "undertow_bar";
+	dir = 4;
+	name = "Bar Shutters"
+	},
+/turf/open/indestructible/hotelwood,
+/area/voidcrew/trader_outpost)
+"XA" = (
+/obj/machinery/atmospherics/pipe/smart/manifold4w/cyan/visible,
+/obj/effect/turf_decal/stripes/line{
+	dir = 2
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Ys" = (
+/obj/machinery/atmospherics/components/unary/thermomachine/freezer/on{
+	dir = 2
+	},
+/obj/effect/turf_decal/stripes/line{
+	dir = 1
+	},
+/turf/open/indestructible/dark/textured,
+/area/voidcrew/trader_outpost)
+"Zf" = (
+/obj/machinery/chrome_sign,
+/turf/closed/indestructible/syndicate/outpost,
+/area/voidcrew/trader_outpost)
+"Zo" = (
+/obj/effect/turf_decal/delivery,
+/turf/open/indestructible/plating,
+/area/voidcrew/trader_outpost)
+
+(1,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+"}
+(2,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+"}
+(3,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+"}
+(4,1,1) = {"
+aC
+aC
+aa
+aa
+aa
+aV
+aV
+aV
+aa
+aa
+aa
+aa
+ag
+aa
+aa
+aa
+aa
+aV
+aV
+aa
+aC
+aC
+aC
+aC
+"}
+(5,1,1) = {"
+aC
+aa
+fS
+XA
+UL
+ad
+qd
+hc
+vl
+jX
+Ge
+aa
+ad
+eQ
+GA
+aa
+aB
+aR
+ap
+aS
+aa
+aC
+aC
+aC
+"}
+(6,1,1) = {"
+aC
+aa
+bO
+XA
+HP
+RY
+aa
+vm
+ad
+ad
+RY
+aa
+jc
+KU
+Oq
+aa
+as
+as
+af
+aJ
+aa
+aC
+aC
+aF
+"}
+(7,1,1) = {"
+Wi
+Cg
+Wf
+Lu
+HP
+Bt
+aa
+yw
+Ql
+ad
+Is
+aa
+pr
+ad
+bg
+ag
+az
+ar
+ar
+av
+aa
+aa
+aa
+aL
+"}
+(8,1,1) = {"
+aC
+aa
+se
+XA
+HP
+Ih
+aa
+mJ
+ad
+ad
+ad
+st
+Oz
+ad
+GI
+aa
+aI
+ar
+ar
+aZ
+aw
+aH
+at
+aL
+"}
+(9,1,1) = {"
+aC
+aa
+Ys
+XA
+UL
+BJ
+aa
+pD
+ad
+ad
+yS
+aa
+dm
+nm
+ez
+aa
+aY
+aN
+au
+am
+aa
+aa
+aa
+aL
+"}
+(10,1,1) = {"
+aC
+aa
+go
+XA
+eC
+Nk
+aa
+Vy
+ad
+Oz
+nA
+aa
+WQ
+ad
+Nk
+aa
+ak
+au
+ar
+aJ
+aa
+aC
+aC
+aF
+"}
+(11,1,1) = {"
+aC
+aa
+aa
+aa
+aa
+aa
+aa
+aa
+aV
+aA
+aV
+aE
+aa
+aa
+aa
+aa
+aU
+ar
+am
+aJ
+ac
+aC
+aC
+aL
+"}
+(12,1,1) = {"
+aC
+aa
+Cq
+zf
+aV
+SI
+SI
+SI
+bn
+aj
+aj
+aj
+aj
+aj
+VR
+aW
+ao
+ao
+ao
+as
+aa
+aC
+aC
+aL
+"}
+(13,1,1) = {"
+aC
+aa
+PM
+Zo
+aV
+SI
+xe
+SI
+kk
+kk
+kk
+kk
+kk
+kk
+kk
+aW
+ao
+ar
+ar
+aG
+aa
+aC
+aC
+aL
+"}
+(14,1,1) = {"
+aC
+aa
+RI
+wY
+aV
+SI
+SI
+SI
+bn
+aj
+aj
+aj
+aj
+aj
+Pc
+aa
+ap
+ar
+ao
+aQ
+aa
+aC
+aC
+aC
+"}
+(15,1,1) = {"
+aC
+aa
+GN
+JY
+aV
+MD
+aj
+aj
+IO
+aj
+aj
+Fe
+aj
+ci
+Fe
+aa
+ar
+au
+ar
+aM
+aV
+aC
+aC
+aC
+"}
+(16,1,1) = {"
+aC
+aa
+Cq
+ai
+aV
+vb
+aj
+aj
+aj
+ci
+aj
+aj
+aj
+aj
+VR
+ag
+aq
+aR
+ar
+aM
+aV
+aC
+aC
+aC
+"}
+(17,1,1) = {"
+aC
+aa
+SS
+RI
+aV
+ME
+ci
+VB
+ci
+aj
+dk
+aj
+aj
+aj
+MY
+aa
+aK
+ar
+ar
+aM
+aV
+aC
+aC
+aC
+"}
+(18,1,1) = {"
+aC
+aa
+vB
+uM
+aa
+pB
+aj
+aj
+aj
+aj
+aj
+aj
+VB
+dk
+VR
+aa
+az
+ar
+aR
+ah
+aa
+aC
+aC
+aC
+"}
+(19,1,1) = {"
+aC
+aa
+RI
+wY
+aa
+AU
+aj
+aj
+aj
+aj
+aj
+ci
+aj
+aj
+Jz
+aa
+ak
+ar
+ar
+aN
+ag
+aC
+aC
+aC
+"}
+(20,1,1) = {"
+aC
+aa
+Gs
+Cq
+aa
+Vr
+aj
+ci
+ci
+xj
+aj
+aj
+xL
+aj
+VR
+aW
+ao
+ao
+ao
+aS
+aa
+aC
+aC
+aC
+"}
+(21,1,1) = {"
+aC
+aa
+Cq
+ai
+aa
+ci
+aj
+aj
+MP
+aj
+ci
+aj
+Wb
+aj
+VR
+aW
+ao
+LB
+aN
+aR
+aa
+aC
+aC
+aC
+"}
+(22,1,1) = {"
+aC
+aa
+QV
+dw
+aa
+cJ
+aj
+aj
+ve
+Fe
+ve
+aj
+xF
+ci
+Jz
+aa
+yd
+aB
+ar
+Uq
+aa
+aC
+aC
+aC
+"}
+(23,1,1) = {"
+aC
+aa
+Qf
+ck
+aa
+MG
+kM
+bL
+jt
+aj
+sC
+KQ
+kM
+KQ
+VR
+aa
+LK
+ar
+Eu
+hd
+aa
+aC
+aC
+aC
+"}
+(24,1,1) = {"
+aC
+aC
+aa
+aa
+aa
+aa
+aa
+aa
+ag
+aa
+aP
+aP
+aa
+aa
+aa
+aa
+aa
+ab
+al
+aa
+aa
+aa
+aC
+aC
+"}
+(25,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+Sp
+Il
+uC
+jE
+RM
+fL
+jE
+aO
+RM
+aO
+Av
+aa
+ay
+ay
+ay
+aa
+aC
+aC
+"}
+(26,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+mG
+hV
+aO
+Xr
+nG
+RM
+aO
+RM
+aO
+fL
+wK
+aa
+ay
+ay
+aX
+aa
+aC
+aC
+"}
+(27,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+nl
+RM
+fL
+dz
+nG
+aO
+hH
+aO
+aO
+aO
+TM
+aa
+ay
+ay
+ay
+aa
+aC
+aC
+"}
+(28,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+ae
+vk
+kF
+tP
+we
+nG
+aO
+Gn
+My
+Pi
+aO
+CO
+aa
+aa
+ag
+aa
+aa
+aa
+aa
+"}
+(29,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+Gn
+wK
+Pi
+Xr
+nG
+Pi
+aO
+aO
+aO
+Pi
+ut
+Zf
+au
+FI
+aV
+as
+ww
+aa
+"}
+(30,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+zr
+fL
+aO
+Xr
+nG
+hH
+TD
+aO
+aO
+aO
+ji
+aa
+FI
+Mu
+aV
+ar
+yo
+aa
+"}
+(31,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aa
+yK
+RM
+Pi
+aO
+RM
+Gn
+Pn
+aO
+aO
+RM
+aO
+aV
+au
+SI
+aV
+dq
+EN
+aa
+"}
+(32,1,1) = {"
+aC
+aC
+aF
+aa
+aa
+aT
+uq
+RM
+aO
+aO
+aO
+aO
+aO
+aO
+hH
+aO
+aO
+aV
+ar
+cL
+aV
+mx
+DM
+aa
+"}
+(33,1,1) = {"
+aC
+aC
+aL
+an
+aH
+aD
+DU
+aO
+RM
+RM
+RM
+RM
+aO
+Pn
+VM
+kU
+aO
+aV
+ar
+dq
+vn
+om
+SI
+aa
+"}
+(34,1,1) = {"
+aC
+aC
+aF
+aa
+aa
+aa
+ip
+Pi
+aO
+aO
+aO
+aO
+RM
+Pi
+dW
+aO
+Pi
+aa
+NP
+ar
+aV
+ar
+GV
+aa
+"}
+(35,1,1) = {"
+aC
+aC
+aL
+aC
+aC
+aa
+vK
+aO
+iQ
+Cj
+Pi
+aO
+aO
+MJ
+BP
+gK
+Tt
+nU
+ao
+ar
+aV
+ar
+au
+aa
+"}
+(36,1,1) = {"
+aC
+aC
+ax
+aC
+aC
+aC
+aa
+aa
+aa
+aa
+aV
+aV
+aV
+aa
+aa
+aa
+aa
+aa
+jn
+WW
+aV
+WO
+ps
+aa
+"}
+(37,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aa
+aa
+aa
+aa
+aa
+aa
+aa
+"}
+(38,1,1) = {"
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+aC
+"}

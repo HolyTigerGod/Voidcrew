@@ -22,11 +22,22 @@
 	var/list/mob_spawn_list
 	var/list/flora_spawn_list
 	var/list/megafauna_spawn_list
+	/// Optional weighted table of this biome's meaner-tier fauna. On planets in
+	/// dangerous overmap zones, a fraction of mob rolls upgrade to this table
+	/// (see ZONE_PLANET_MOB_UPGRADE_PROB_* and planet_generator/populate_terrain).
+	/// Never used for megafauna rolls. Biomes without one only get denser spawns.
+	var/list/dangerous_mob_spawn_list
 	var/mob_spawn_chance = 6
 	var/flora_spawn_chance = 2
 	var/feature_spawn_chance = 0.1
 
 /datum/biome/cave
+	/**
+	 * Every cave biome must set this. The default is lavaland rock, which mines into
+	 * low-pressure basalt sitting on a lava baseturf - correct only on a lava planet,
+	 * and silently wrong (unbreathable mined tiles) everywhere else. Pair it with a
+	 * wall whose baseturf matches this biome's own open_turf_types.
+	 */
 	var/closed_turf_types =  list(/turf/closed/mineral/random/volcanic = 1)
 	open_turf_types = list(/turf/open/misc/asteroid = 1)
 

@@ -1,6 +1,4 @@
 import { useState } from 'react';
-
-import { useBackend } from '../../tgui/backend';
 import {
   Box,
   Button,
@@ -12,6 +10,7 @@ import {
   Stack,
   Tabs,
 } from 'tgui-core/components';
+import { useBackend } from '../../tgui/backend';
 import { Window } from '../../tgui/layouts';
 
 interface BaseSurveyData {
@@ -39,6 +38,13 @@ interface Planet extends BaseSurveyData {
   visited: number;
   weather_type: string;
   living_player_count: number;
+  /**
+   * One plain sentence about what the planet's zone band does to a landing
+   * party - red-band worlds carry radiation storms whatever their climate.
+   * Null where there is nothing to warn about. See get_hazard_note() in
+   * voidcrew/modules/overmap/code/modules/overmap/ship_sensors.dm.
+   */
+  hazard_note?: string | null;
 }
 
 interface Star extends BaseSurveyData {
@@ -54,7 +60,20 @@ interface SurveyData {
   stars: Star[];
 }
 
+interface SurveyTarget {
+  ref: string;
+  name: string;
+  status: 'unsurveyed' | 'complete' | 'in-progress' | 'no-orbit';
+  atRange: number;
+  dist: number;
+  points: number;
+  cash: number;
+  mappable: number;
+}
+
 interface Data {
+  archiveMode: number;
+  researchLinked: number;
   bankedCash: number;
   bankedPoints: number;
   currentCelestialRef: string;
@@ -62,7 +81,11 @@ interface Data {
   surveyData: SurveyData;
   mappingEnabled?: number;
   shipMoving: number;
+  surveyAtRange?: number;
+  rangeSurveyDistance?: number;
+  rangeSurveyPercent?: number;
   surveyStatus?: 'unsurveyed' | 'complete' | 'in-progress' | 'no-orbit';
+  surveyTargets?: SurveyTarget[];
   surveyValue: { cash: number; points: number };
   surveyDataDisk: number;
   theme?: string;
@@ -135,12 +158,16 @@ const getThemeColors = (theme: string): ColorScheme | undefined => {
   return colorScheme;
 };
 
-export const SurveyComputer = (props, context) => {
+export const SurveyComputer = () => {
   const { act, data } = useBackend<Data>();
   const { theme, currentCelestialRef, currentCelestialType } = data;
   const [tab, setTab] = useState(1);
 
   const currentThemeColors = theme ? getThemeColors(theme) : undefined;
+
+  if (data.archiveMode) {
+    return <SurveyArchive />;
+  }
 
   return (
     <Window
@@ -371,68 +398,123 @@ export const SurveyComputer = (props, context) => {
   );
 };
 
-const Surveying = (props, context) => {
+/** Shore consoles exchange completed records through physical disks and local R&D. */
+const SurveyArchive = () => {
+  const { data } = useBackend<Data>();
+  return (
+    <Window
+      width={640}
+      height={650}
+      title="Outpost Survey Archive"
+      theme={data.theme}
+    >
+      <Window.Content scrollable>
+        <NoticeBox>
+          {data.researchLinked
+            ? 'Completed records are synchronized with the linked local research server.'
+            : 'Link a local research server with a multitool to use completed survey records for research.'}
+        </NoticeBox>
+        <Section title="Disk and display settings">
+          <Settings />
+        </Section>
+        <Section title="Completed surveys">
+          {Object.entries(data.surveyData).map(([category, records]) => (
+            <Collapsible key={category} title={category.replaceAll('_', ' ')}>
+              {Object.keys(records).length === 0 ? (
+                <Box color="label">No completed records.</Box>
+              ) : (
+                Object.entries(records).map(([name, record]) => (
+                  <Section key={name} title={name}>
+                    <LabeledList>
+                      {Object.entries(record as BaseSurveyData)
+                        .filter(([field]) => field !== 'ref_id')
+                        .map(([field, value]) => (
+                          <LabeledList.Item
+                            key={field}
+                            label={field.replaceAll('_', ' ')}
+                          >
+                            {typeof value === 'object'
+                              ? JSON.stringify(value)
+                              : String(value)}
+                          </LabeledList.Item>
+                        ))}
+                    </LabeledList>
+                  </Section>
+                ))
+              )}
+            </Collapsible>
+          ))}
+        </Section>
+      </Window.Content>
+    </Window>
+  );
+};
+
+const Surveying = () => {
   const { act, data } = useBackend<Data>();
   const {
     bankedCash,
     theme,
     bankedPoints,
-    mappingEnabled,
-    surveyValue,
-    surveyStatus,
     shipMoving,
+    surveyTargets = [],
+    rangeSurveyDistance = 3,
+    rangeSurveyPercent = 60,
   } = data;
 
   interface Option {
-    state: 'unsurveyed' | 'complete' | 'in-progress' | 'no-orbit';
     content: string;
     action?: string;
     disabled?: boolean;
     tooltip?: string;
   }
 
-  const options: Option[] = [
-    {
-      content: 'Start survey',
-      state: 'unsurveyed',
-      action: 'survey',
-      tooltip:
-        surveyValue && surveyValue.points && surveyValue.cash
-          ? `Value: ${surveyValue.points} points | ${surveyValue.cash} credits`
-          : undefined,
-    },
-    {
-      content: 'In progress',
-      state: 'in-progress',
-      disabled: true,
-    },
-    {
-      content: 'Open map',
-      state: 'complete',
-      action: 'map',
-      disabled: mappingEnabled ? false : true,
-      tooltip: mappingEnabled ? undefined : 'Mapping is not yet unlocked',
-    },
-    {
-      content: 'Start survey',
-      state: 'no-orbit',
-      disabled: true,
-      tooltip: 'not orbiting any celestials',
-    },
-  ];
+  const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const selectedTarget =
+    surveyTargets.find((target) => target.ref === selectedRef) ??
+    surveyTargets[0];
 
-  let currentOption = options.find((opt) => opt.state === surveyStatus) as
-    | Option
-    | undefined;
-
-  if (currentOption === undefined) {
-    currentOption = options[3];
-  }
+  const currentOption: Option = !selectedTarget
+    ? {
+        content: 'Start survey',
+        disabled: true,
+        tooltip: 'no celestials in orbit or within scan range',
+      }
+    : selectedTarget.status === 'in-progress'
+      ? {
+          content: 'In progress',
+          disabled: true,
+        }
+      : selectedTarget.status === 'complete'
+        ? {
+            content: 'Open map',
+            action: 'map',
+            disabled: selectedTarget.mappable ? false : true,
+            tooltip: selectedTarget.mappable
+              ? undefined
+              : 'Mapping is not yet unlocked',
+          }
+        : {
+            content: 'Start survey',
+            action: 'survey',
+            tooltip:
+              selectedTarget.points && selectedTarget.cash
+                ? `Value: ${selectedTarget.points} points | ${selectedTarget.cash} credits`
+                : undefined,
+          };
 
   const notices: string[] = [];
 
   if (shipMoving === 0) {
     notices.push('Ship is currently moving, surveying disabled');
+  }
+
+  if (
+    selectedTarget &&
+    selectedTarget.atRange === 1 &&
+    selectedTarget.status === 'unsurveyed'
+  ) {
+    notices.push('Storm targeted at range: reduced survey yield');
   }
 
   if (bankedPoints && bankedPoints !== 0) {
@@ -443,11 +525,10 @@ const Surveying = (props, context) => {
     notices.push(`You have ${bankedCash} credits to cash out`);
   }
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
-  let selectedTheme;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
   return (
     <Stack vertical fill textAlign="center">
-      <Stack.Item height="20%" pb={0} mb={0}>
+      <Stack.Item pb={0} mb={0}>
         <Stack>
           <Stack.Item grow>
             <Collapsible
@@ -475,7 +556,43 @@ const Surveying = (props, context) => {
           </Stack.Item>
         </Stack>
       </Stack.Item>
-      <Stack.Item height="60%" grow>
+      <Stack.Item grow>
+        <Section title="Targets" fill scrollable>
+          <Box color="label" mb={1}>
+            Surveying needs the ship stationary on the same overmap tile as the
+            target — no docking or landing required. Electric and EMP storms can
+            also be scanned from up to {rangeSurveyDistance} tiles away at{' '}
+            {rangeSurveyPercent}% yield.
+          </Box>
+          {surveyTargets.length > 0 ? (
+            <Tabs vertical>
+              {surveyTargets.map((target) => {
+                return (
+                  <Tabs.Tab
+                    key={target.ref}
+                    selected={
+                      selectedTarget ? target.ref === selectedTarget.ref : false
+                    }
+                    onClick={() => setSelectedRef(target.ref)}
+                  >
+                    {target.name}
+                    {target.atRange ? ` (${target.dist} tiles out)` : ''}
+                    {target.status === 'complete' ? ' — surveyed' : ''}
+                  </Tabs.Tab>
+                );
+              })}
+            </Tabs>
+          ) : (
+            <NoticeBox
+              backgroundColor={currentThemeColors?.notice}
+              textColor={currentThemeColors?.noticeText}
+            >
+              No celestials in orbit or within scan range
+            </NoticeBox>
+          )}
+        </Section>
+      </Stack.Item>
+      <Stack.Item>
         <Button
           lineHeight={3}
           backgroundColor={currentThemeColors?.button}
@@ -489,7 +606,14 @@ const Surveying = (props, context) => {
             shipMoving === 0 ? true : currentOption.disabled ? true : false
           }
           onClick={() => {
-            currentOption.action ? act(currentOption.action) : undefined;
+            if (!currentOption.action) {
+              return;
+            }
+            if (currentOption.action === 'survey') {
+              act('survey', { target_ref: selectedTarget?.ref });
+            } else {
+              act(currentOption.action);
+            }
           }}
         >
           {currentOption.content}
@@ -499,7 +623,7 @@ const Surveying = (props, context) => {
   );
 };
 
-const Planets = (props, context) => {
+const Planets = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -522,9 +646,14 @@ const Planets = (props, context) => {
             : 'No previous shuttle activity detected',
         }
       : undefined),
+    // Band hazards, not climate: a red-ring world carries radiation storms on
+    // top of whatever weather its terrain gives it.
+    ...(selectedPlanetData?.hazard_note
+      ? { Hazards: selectedPlanetData.hazard_note }
+      : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -636,7 +765,7 @@ const Planets = (props, context) => {
   );
 };
 
-const Nebulas = (props, context) => {
+const Nebulas = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -657,7 +786,7 @@ const Nebulas = (props, context) => {
       : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -751,7 +880,7 @@ const Nebulas = (props, context) => {
   );
 };
 
-const ElectricStorms = (props, context) => {
+const ElectricStorms = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -775,7 +904,7 @@ const ElectricStorms = (props, context) => {
       : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -873,7 +1002,7 @@ const ElectricStorms = (props, context) => {
   );
 };
 
-const ElectroMagneticStorms = (props, context) => {
+const ElectroMagneticStorms = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -897,7 +1026,7 @@ const ElectroMagneticStorms = (props, context) => {
       : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -991,7 +1120,7 @@ const ElectroMagneticStorms = (props, context) => {
   );
 };
 
-const Asteroids = (props, context) => {
+const Asteroids = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -1012,7 +1141,7 @@ const Asteroids = (props, context) => {
       : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -1106,7 +1235,7 @@ const Asteroids = (props, context) => {
   );
 };
 
-const Stars = (props, context) => {
+const Stars = () => {
   const { act, data } = useBackend<Data>();
   const { surveyStatus, theme, surveyData, currentCelestialRef } = data;
 
@@ -1127,7 +1256,7 @@ const Stars = (props, context) => {
       : undefined),
   };
 
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack fill textAlign="center">
@@ -1221,10 +1350,10 @@ const Stars = (props, context) => {
   );
 };
 
-const Banking = (props, context) => {
+const Banking = () => {
   const { act, data } = useBackend<Data>();
   const { bankedCash, theme } = data;
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack vertical>
@@ -1262,10 +1391,10 @@ const Banking = (props, context) => {
   );
 };
 
-const Research = (props, context) => {
+const Research = () => {
   const { act, data } = useBackend<Data>();
   const { bankedPoints, surveyStatus, theme } = data;
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
 
   return (
     <Stack vertical>
@@ -1304,10 +1433,10 @@ const Research = (props, context) => {
   );
 };
 
-const Settings = (props, context) => {
+const Settings = () => {
   const { act, data } = useBackend<Data>();
   const { surveyDataDisk, bankedPoints, surveyStatus, theme } = data;
-  let currentThemeColors = theme ? getThemeColors(theme) : undefined;
+  const currentThemeColors = theme ? getThemeColors(theme) : undefined;
   let selectedTheme;
   return (
     <Box align="center" pl={2} pr={2}>

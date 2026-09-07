@@ -11,6 +11,11 @@
 	name = "Scarab-class Frigate"
 	short_name = "Scarab-class"
 	suffix = "scarab_a" // Default suffix, overridden by selected theme
+	catalog_desc = "A mid-size frigate shaped like its namesake, with a medbay, a cargo bay and \
+		proper engineering under one roof. The fleet's all-rounder: comfortable for five to \
+		eight crew, nothing exceptional in any one direction, and slots for medical, \
+		engineering, commons and cargo to lean it whichever way you want."
+	part_requirements = list(PART_CLASS_SCIENCE = 14, PART_CLASS_MISC = 10, PART_CLASS_TRADE = 8, PART_CLASS_COMBAT = 4)
 	has_upgrade_slots = TRUE
 	upgrade_slot_ids = list(
 		"scarab_med",
@@ -25,6 +30,10 @@
 
 /obj/docking_port/mobile/voidcrew/scarab
 	area_type = /area/shuttle/voidcrew/scarab
+	// The hull is 33x20 with its port mapped facing west, so the shuttle measures 33 fore
+	// to aft against 20 abeam and the aspect-ratio guess in adjust_reserve_dock_to_shuttle
+	// comes out EAST. This must match it or the ship spins 90 degrees on every dock.
+	preferred_direction = 4
 
 /obj/docking_port/mobile/voidcrew/scarab/a
 	name = "Scarab-class Frigate A"

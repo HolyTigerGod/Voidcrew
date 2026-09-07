@@ -88,8 +88,14 @@
 			if(T.x >= (shuttle_coords[1] - 1) && T.x <= (shuttle_coords[3] + 1))
 				if(T.y >= (shuttle_coords[2] - 1) && T.y <= (shuttle_coords[4] + 1))
 					near_shuttle = TRUE
+	// This warned and then carried on regardless, so the adjacency requirement the
+	// message describes was never enforced. Standing in any airtight room anywhere -
+	// a ruin, an outpost, the inside of a bitrunning virtual domain - and picking
+	// "New Area" handed that room, and everything in it, to your ship's shuttle_areas.
+	// The next dock moved it, contents and all, to wherever the ship went.
 	if(!near_shuttle)
 		to_chat(creator, "<span class='warning'>The new area must be next to the shuttle.</span>")
+		return
 	var/area_choice = input(creator, "Choose an area to expand or make a new area.", "Area Expansion") as null|anything in areas
 	area_choice = areas[area_choice]
 
@@ -132,9 +138,13 @@
 
 	target_shuttle.shuttle_areas[newA] = TRUE
 
-	newA.connect_to_shuttle(target_shuttle, target_shuttle.get_docked())
+	// (mapload, port, dock) - passing the port first handed the mobile port to the
+	// mapload arg and a stationary dock (or null) to the port arg, which corrupted
+	// the area's shuttle_port and bound any machinery in the new area to the
+	// stationary dock instead of the ship
+	newA.connect_to_shuttle(FALSE, target_shuttle, target_shuttle.get_docked())
 	for(var/atom/thing in newA)
-		thing.connect_to_shuttle(target_shuttle, target_shuttle.get_docked())
+		thing.connect_to_shuttle(FALSE, target_shuttle, target_shuttle.get_docked())
 
 	target_shuttle.recalculate_bounds()
 
@@ -152,13 +162,17 @@
 	var/minY = INFINITY
 	var/maxY = 0
 	for(var/area/A in shuttle_areas)
-		for(var/turf/T in A)
+		// Only turfs on our own z: a tile stranded at a previous location otherwise
+		// stretches the measured extents across two map sites and poisons
+		// width/height/dwidth/dheight for every later move (round 803/804 thruster
+		// losses). Would need the full z-range if a multi-z hull ever recomputed.
+		for(var/turf/T as anything in A.get_turfs_by_zlevel(z))
 			minX = min(T.x, minX)
 			maxX = max(T.x, maxX)
 			minY = min(T.y, minY)
 			maxY = max(T.y, maxY)
-	//Make sure shuttle was actually found.
-	if(maxX == INFINITY || maxY == INFINITY)
+	//Make sure shuttle was actually found. (maxX/maxY start at 0, so test the mins.)
+	if(minX == INFINITY || minY == INFINITY)
 		return FALSE
 	minX--
 	minY--

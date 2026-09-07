@@ -2,6 +2,9 @@
 
 /datum/map_template/ruin/wasteland
 	prefix = "_maps/voidcrew/RandomRuins/WastelandRuins/"
+	ruin_type = ZTRAIT_WASTELAND_RUINS
+	allow_duplicates = FALSE
+	cost = 5
 
 /datum/map_template/ruin/wasteland/solgov_crash
 	name = "Crashed SolGov Transport"
@@ -32,17 +35,17 @@
 	name = "Blood-Drunk Miner"
 	id = "blooddrunk"
 	description = "A strange arrangement of stone tiles and an insane, beastly miner contemplating them."
-	suffix = "wasteland_surface_blooddrunk1.dmm"
+	suffix = "wasteland_surface_bloodrunk1.dmm" // sic: the on-disk filenames are missing the second d
 	cost = 0
 	allow_duplicates = FALSE //will only spawn one variant of the ruin
 
 /datum/map_template/ruin/wasteland/blood_drunk_miner/guidance
 	name = "Blood-Drunk Miner (Guidance)"
-	suffix = "wasteland_surface_blooddrunk2.dmm"
+	suffix = "wasteland_surface_bloodrunk2.dmm"
 
 /datum/map_template/ruin/wasteland/blood_drunk_miner/hunter
 	name = "Blood-Drunk Miner (Hunter)"
-	suffix = "wasteland_surface_blooddrunk3.dmm"
+	suffix = "wasteland_surface_bloodrunk3.dmm"
 
 /datum/map_template/ruin/wasteland/seed_vault
 	name = "Seed Vault"
@@ -226,7 +229,7 @@
 
 /datum/map_template/ruin/wasteland/tradepost
 	name = "Tradepost"
-	id = "oldpod"
+	id = "tradepost" // was a copy-paste duplicate of oldpod's id
 	description = "A crashed tradepost."
 	suffix = "wasteland_tradepost.dmm"
 
@@ -319,3 +322,41 @@
 	description = "A crashed part of some unlucky ship. Has been occupied by a cult."
 	id = "crash_cult"
 	suffix = "wasteland_crash_cult.dmm"
+
+/datum/map_template/ruin/wasteland/saltmine
+	name = "Salt Mine"
+	id = "ws-saltmine"
+	description = "An exhausted salt mine. The miners left in a hurry."
+	suffix = "wasteland_surface_saltmine.dmm"
+	allow_duplicates = FALSE
+
+/datum/map_template/ruin/wasteland/sin/sloth
+	name = "Ruin of Sloth"
+	id = "sloth"
+	description = "It'll keep. It always keeps."
+	suffix = "wasteland_surface_sloth.dmm"
+	allow_duplicates = FALSE
+
+// ---- Voidcrew micro-POIs ----
+// Tiny (5x4, 6x5) scattered setpieces that soak up leftover ruin budget:
+// cost 1-2, duplicates allowed, low weight so they season the pool rather
+// than dominate. Base wasteland defaults are cost = 5 and
+// allow_duplicates = FALSE, so both must be overridden here.
+
+/datum/map_template/ruin/wasteland/micro_graves
+	name = "Wasteland-Micro Caravan Burial Ground"
+	id = "micro-ws-graves"
+	description = "A caravan buried its dead after a bad night on the flats and left a votive chest so they would stay put."
+	suffix = "wasteland_micro_graves.dmm"
+	cost = 2
+	allow_duplicates = TRUE
+	placement_weight = 0.5
+
+/datum/map_template/ruin/wasteland/micro_wreck
+	name = "Wasteland-Micro Burnt-Out Hauler"
+	id = "micro-ws-wreck"
+	description = "A cargo hauler burned to the frame. Scavvers took everything worth taking except the driver."
+	suffix = "wasteland_micro_wreck.dmm"
+	cost = 1
+	allow_duplicates = TRUE
+	placement_weight = 0.5

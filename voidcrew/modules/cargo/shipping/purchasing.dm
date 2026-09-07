@@ -4,7 +4,7 @@
 /obj/machinery/computer/voidcrew_cargo/proc/buy()
 	SEND_SIGNAL(src, COMSIG_SUPPLY_SHUTTLE_BUY)
 
-	if(!checkout_list.len)
+	if(!checkout_list.len || !bank_account_holder?.synced_bank_account)
 		return FALSE
 
 	var/datum/voidcrew_cargo_shuttle/cargo_shuttle = get_cargo_shuttle()
@@ -22,21 +22,25 @@
 
 	var/value = 0
 	var/purchases = 0
+	var/unpaid = 0
 
 	// Group orders by pack name for cleaner history
 	var/list/order_counts = list()
 	var/list/order_costs = list()
 
-	for(var/datum/supply_order/spawning_order as anything in checkout_list)
-		var/price = spawning_order.pack.get_cost()
-		if(spawning_order.applied_coupon)
-			price *= (1 - spawning_order.applied_coupon.discount_pct_off)
+	// Iterate a copy: paid orders leave checkout_list inside the loop.
+	for(var/datum/supply_order/spawning_order as anything in checkout_list.Copy())
+		// The cart quote is also the debit. Material stock is checked in full before
+		// payment and consumed only after payment, never partially at a pooled price.
+		if(!spawning_order.settle_ship_order(bank_account_holder.synced_bank_account))
+			var/obj/structure/overmap/ship/notified_ship = get_ship_from_atom(src)
+			notified_ship?.ship_notify("Order #[spawning_order.id]: [spawning_order.ship_settlement_error]", \
+				"CARGO", SHIP_NOTIFY_WARNING, 'voidcrew/sound/notify2.ogg', 50)
+			unpaid++
+			continue
+		var/price = spawning_order.ship_paid_cost
 
-		// Actually deduct the cost from the bank account
-		bank_account_holder.synced_bank_account.adjust_money(-price)
-
-		if(spawning_order.paying_account)
-			SSeconomy.track_purchase(bank_account_holder.synced_bank_account, price, spawning_order.pack.name)
+		SSeconomy.track_purchase(bank_account_holder.synced_bank_account, price, spawning_order.pack.name)
 		value += price
 		checkout_list -= spawning_order
 		QDEL_NULL(spawning_order.applied_coupon)
@@ -45,9 +49,27 @@
 		order_counts[spawning_order.pack.name] = (order_counts[spawning_order.pack.name] || 0) + 1
 		order_costs[spawning_order.pack.name] = (order_costs[spawning_order.pack.name] || 0) + price
 
-		// Generate the order contents on a random cargo bay turf
+		// Generate the order contents on a random cargo bay turf. Forty-odd packs ship
+		// in a secure crate type, which arrives locked - anyone aboard can toggle it
+		// open, but the crew shouldn't have to unlock cargo they just paid for.
 		var/turf/spawn_turf = pick(cargo_turfs)
-		spawning_order.generate(spawn_turf)
+		if(spawning_order.pack.goody)
+			// Goody packs have no crate type: upstream never routes them through
+			// generate() (it hand-packs them into account-locked cases), so calling
+			// it here CRASHed and the whole shipment loop died with the money spent.
+			// Ship-paid orders belong to the whole crew, so a plain box does.
+			var/obj/item/storage/box/goody_box = new(spawn_turf)
+			goody_box.name = "goody package - [spawning_order.pack.name]"
+			// Manifest errors can qdel contents; a goody is often a single item
+			ADD_TRAIT(goody_box, TRAIT_NO_MISSING_ITEM_ERROR, TRAIT_GENERIC)
+			ADD_TRAIT(goody_box, TRAIT_NO_MANIFEST_CONTENTS_ERROR, TRAIT_GENERIC)
+			spawning_order.pack.fill(goody_box)
+			spawning_order.generateManifest(goody_box, "Cargo", spawning_order.pack, price)
+		else
+			var/obj/structure/closet/crate/delivered_crate = spawning_order.generate(spawn_turf)
+			if(delivered_crate?.locked)
+				delivered_crate.locked = FALSE
+				delivered_crate.update_appearance()
 
 		SSblackbox.record_feedback("nested tally", "cargo_imports", 1, list("[price]", "[spawning_order.pack.name]"))
 
@@ -59,6 +81,10 @@
 	// Record purchases in history
 	for(var/pack_name in order_counts)
 		cargo_shuttle.record_transaction("buy", pack_name, order_counts[pack_name], order_costs[pack_name])
+
+	if(unpaid)
+		var/obj/structure/overmap/ship/paying_ship = get_ship_from_atom(src)
+		paying_ship?.ship_notify("[unpaid] order[unpaid > 1 ? "s" : ""] could not be paid for and [unpaid > 1 ? "remain" : "remains"] in the cart.", "CARGO", SHIP_NOTIFY_WARNING, 'voidcrew/sound/notify2.ogg', 50)
 
 	SSeconomy.import_total += value
 	investigate_log("[purchases] orders in this shipment, worth [value] credits. [bank_account_holder.synced_bank_account.account_balance] credits left.", INVESTIGATE_CARGO)

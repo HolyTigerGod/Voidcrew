@@ -2,16 +2,29 @@
  * NPC Ships Spawner Subsystem
  *
  * Manages deterministic spawning of NPC pirate ships.
- * Spawns 3 pirates at round start from a unified faction pool.
- * Any faction can spawn in any zone - the zone determines behavior:
- * - Yellow zone: scan -> lock -> interdict + siphon (economic threat)
+ * Spawns 4 pirates at round start from a unified faction pool, split evenly between the
+ * red and yellow bands. Any faction can spawn in any zone - the zone determines behavior:
+ * - Yellow zone: scan -> hail -> negotiate -> interdict + siphon (economic threat)
  * - Red zone: hail -> negotiate -> boarding waves -> boss (lethal threat)
- * When a pirate is "resolved" (killed, claimed, abandoned), spawns a replacement.
+ *
+ * Pool rotation: a pirate is "resolved" when all its crew aboard are dead, or when its
+ * ship key is claimed at a helm / turned in for a bounty (see the ship's
+ * notify_spawner_resolved). Every resolve spawns a replacement in the same band. Hull
+ * destruction does NOT resolve a pirate - a wreck with live crew aboard holds its slot
+ * until someone boards the crash site and finishes the job.
+ * Disarming also frees the slot, but starts a 10-minute salvage window for that hull.
+ * The derelict sweep then removes it unless claimed or still being boarded.
+ *
+ * fire() is a low-frequency reconcile that re-derives the population from live state.
+ * It exists because the event paths alone provably wedge: in the round-4 audit the
+ * event-driven design produced zero replacements across 22 hours. The reconcile catches
+ * missed death signals, hard-deleted or spaced crew, and failed spawns, and retries
+ * band deficits until the pool is full again.
  */
 SUBSYSTEM_DEF(npc_ships)
 	name = "NPC Ships"
 	init_order = INIT_ORDER_OVERMAP + 2 // After SSovermap and SSovermap_zones
-	flags = SS_NO_FIRE  // No periodic firing - we spawn on events
+	wait = 30 SECONDS // Slow reconcile tick; the event paths handle the instant cases
 	runlevels = RUNLEVEL_GAME
 	dependencies = list(
 		/datum/controller/subsystem/shuttle,  // Need SSshuttle to load ship templates
@@ -20,6 +33,19 @@ SUBSYSTEM_DEF(npc_ships)
 
 	/// List of currently active NPC ships
 	var/list/obj/structure/overmap/ship/npc/active_ships = list()
+
+	/// The zone bands the pool is budgeted across; pirate_count_target is distributed
+	/// round-robin over this list (4 pirates -> 2 red, 2 yellow)
+	var/list/pool_zones = list(ZONE_RED, ZONE_YELLOW)
+
+	/// In-flight spawn claims: list of list("zone" = zone_type, "started" = world.time).
+	/// A slot is claimed synchronously before the (sleeping) template load starts, so a
+	/// concurrent count can't read a deficit that is already being filled and double-spawn.
+	var/list/in_flight_spawns = list()
+
+	/// Text refs of hulls whose missing crew roster the reconcile has already screamed
+	/// about (text so the list never blocks a delete)
+	var/list/logged_malformed = list()
 
 	/// All available pirate faction types (any can spawn in any zone)
 	var/list/all_factions = list(
@@ -62,7 +88,7 @@ SUBSYSTEM_DEF(npc_ships)
 	var/list/available = all_factions.Copy()
 
 	// Build zone assignments: distribute evenly across RED and YELLOW
-	var/list/spawn_zones = list(ZONE_RED, ZONE_YELLOW)
+	var/list/spawn_zones = pool_zones
 	var/list/zone_assignments = list()
 	for(var/i in 1 to pirate_count_target)
 		// Cycle through zones: 1->RED, 2->YELLOW, 3->RED, 4->YELLOW, etc.
@@ -86,41 +112,62 @@ SUBSYSTEM_DEF(npc_ships)
 	log_world("SSnpc_ships: Initial spawn complete. [length(active_ships)] pirates active.")
 
 /**
- * Called when a pirate is "resolved" (killed, claimed, abandoned, etc.)
- * Spawns a replacement from an unused faction in the same zone.
+ * Called when a pirate is "resolved" (crew wiped, key claimed or turned in, abandoned,
+ * deleted). Spawns a replacement in the same zone - off this stack, because callers
+ * include Destroy() and signal handlers, neither of which may sleep through the
+ * template load inside create_npc_ship().
  * @param resolved_type The type path of the resolved pirate ship
- * @param resolved_zone_type The zone type the resolved ship was in (ZONE_YELLOW, ZONE_RED, or null)
+ * @param resolved_zone_type The zone the pirate was budgeted against (null = any)
  */
 /datum/controller/subsystem/npc_ships/proc/on_pirate_resolved(resolved_type, resolved_zone_type)
 	if(!initialized_pirates)
 		return  // Don't replace during initialization
 
-	// Remove from active tracking
-	active_faction_types -= resolved_type
-
-	// Spawn replacement in same zone
-	spawn_replacement(resolved_zone_type)
-
-/**
- * Spawns a replacement pirate.
- * Prefers factions not currently active. Spawns in specified zone.
- * @param target_zone_type The zone type to spawn in (null = any zone)
- */
-/datum/controller/subsystem/npc_ships/proc/spawn_replacement(target_zone_type)
-	// Check if we're at capacity
-	if(length(active_faction_types) >= pirate_count_target)
+	// Only ships from the pirate faction pool get replacements; one-off ships
+	// (mission-dispatched patrols and the like) resolve without a successor
+	if(!(resolved_type in all_factions))
 		return
 
-	// Get factions not currently active
-	var/list/available = all_factions - active_faction_types
+	// Remove from active tracking (kept purely as the variety preference for picks)
+	active_faction_types -= resolved_type
 
-	// If all factions are active, pick any faction
+	// Live capacity check - counts hulls that still hold a slot plus spawns in flight,
+	// never the event-driven faction list (which is exactly what wedged the old design)
+	if(count_pool_ships() >= pirate_count_target)
+		return
+
+	var/list/claim = claim_spawn_slot(resolved_zone_type)
+	INVOKE_ASYNC(src, PROC_REF(run_claimed_spawn), claim)
+
+/**
+ * Claims an in-flight spawn slot so concurrent capacity counts include it.
+ * Must be paired with run_claimed_spawn(), which releases it.
+ */
+/datum/controller/subsystem/npc_ships/proc/claim_spawn_slot(target_zone_type)
+	var/list/claim = list("zone" = target_zone_type, "started" = world.time)
+	in_flight_spawns += list(claim)
+	return claim
+
+/**
+ * Spawns a replacement pirate against a claimed slot, then releases the claim.
+ * Prefers factions not currently active. Sleeps through the template load - only ever
+ * call it via INVOKE_ASYNC or from fire()-adjacent async context.
+ */
+/datum/controller/subsystem/npc_ships/proc/run_claimed_spawn(list/claim)
+	var/target_zone_type = claim["zone"]
+
+	// Get factions not currently active; if all are active, pick any
+	var/list/available = all_factions - active_faction_types
 	if(!length(available))
 		available = all_factions.Copy()
 
 	var/faction_type = pick(available)
-	spawn_pirate(faction_type, target_zone_type)
-	log_world("SSnpc_ships: Spawned replacement pirate: [faction_type] in zone [target_zone_type]")
+	var/obj/structure/overmap/ship/npc/ship = spawn_pirate(faction_type, target_zone_type)
+	in_flight_spawns -= list(claim)
+	if(ship)
+		log_world("SSnpc_ships: Spawned replacement pirate: [faction_type] in zone [target_zone_type || "any"]")
+	// A failed spawn needs no retry logic here - the next reconcile re-reads the
+	// deficit and tries again
 
 /**
  * Spawns a pirate of the specified type.
@@ -134,6 +181,10 @@ SUBSYSTEM_DEF(npc_ships)
 		log_world("SSnpc_ships: Failed to spawn pirate of type [ship_type_path]")
 		return null
 
+	// Record the band this hull is budgeted against; resolves report it back so the
+	// replacement spawns in the same band even if the hull moved (or crashed) since
+	ship.pool_zone_type = target_zone_type || SSovermap_zones.get_zone_type(get_turf(ship))
+
 	// Track in active faction list
 	active_faction_types += ship_type_path
 
@@ -141,6 +192,105 @@ SUBSYSTEM_DEF(npc_ships)
 	SSbounty?.on_pirate_spawned(ship)
 
 	return ship
+
+// ========== POOL RECONCILE ==========
+
+/datum/controller/subsystem/npc_ships/fire(resumed)
+	if(!initialized_pirates)
+		return
+	reconcile_pool()
+
+/**
+ * Whether this hull currently occupies one of the pool's slots.
+ * A slot is held by a live, unclaimed, unresolved pool-faction hull with living crew
+ * aboard. A hull whose crew spawn failed also holds its slot (and gets screamed about
+ * by the reconcile) - auto-resolving it would churn the pool in a loop.
+ */
+/datum/controller/subsystem/npc_ships/proc/ship_holds_pool_slot(obj/structure/overmap/ship/npc/ship)
+	if(QDELETED(ship))
+		return FALSE
+	if(!(ship.type in all_factions))
+		return FALSE // one-off dispatch ships never hold pool slots
+	if(ship.player_controlled || ship.abandoned || ship.spawner_resolved)
+		return FALSE
+	if(!ship.crew_ever_spawned)
+		return TRUE
+	return ship.count_live_crew_aboard() > 0
+
+/**
+ * Live pool population: hulls still holding a slot, plus spawns already in flight.
+ */
+/datum/controller/subsystem/npc_ships/proc/count_pool_ships()
+	var/count = length(in_flight_spawns)
+	for(var/obj/structure/overmap/ship/npc/ship as anything in active_ships)
+		if(ship_holds_pool_slot(ship))
+			count++
+	return count
+
+/**
+ * The authority on pool population. The event paths (crew death signals, key
+ * destruction) are fast paths that usually get there first; this sweep re-derives
+ * everything from live state on a slow tick, so no missed signal, hard delete, spaced
+ * survivor or failed spawn can wedge the pool the way the old event-only design did.
+ */
+/datum/controller/subsystem/npc_ships/proc/reconcile_pool()
+	// Expire in-flight claims whose spawn died mid-load; a leaked claim would otherwise
+	// block its band forever
+	for(var/list/claim as anything in in_flight_spawns.Copy())
+		if(world.time - claim["started"] > 3 MINUTES)
+			in_flight_spawns -= list(claim)
+			log_world("SSnpc_ships: Expired a stalled spawn claim for zone [claim["zone"]]")
+
+	// Sweep the roster: drop dead references, release claimed hulls, resolve crew wipes
+	// the signal path missed
+	for(var/obj/structure/overmap/ship/npc/ship as anything in active_ships.Copy())
+		if(QDELETED(ship))
+			active_ships -= ship
+			continue
+		if(!(ship.type in all_factions))
+			continue // one-off dispatch ships manage their own lifecycle
+		if(ship.player_controlled)
+			// Claimed hulls leave the pool; the key's destruction already resolved them
+			// (the latch makes this a no-op in that case)
+			ship.notify_spawner_resolved("claimed")
+			active_ships -= ship
+			continue
+		if(ship.spawner_resolved || ship.abandoned)
+			continue
+		if(!ship.crew_ever_spawned)
+			if(!(REF(ship) in logged_malformed))
+				logged_malformed += REF(ship)
+				log_world("SSnpc_ships: [ship.name] has no crew roster (spawn_crew failed?) - it holds its pool slot and will never auto-resolve")
+			continue
+		// Put spaced survivors out of their misery before the census reads them
+		ship.sweep_spaced_crew()
+		if(ship.count_live_crew_aboard() <= 0)
+			ship.notify_spawner_resolved("crew wiped (reconcile)")
+			continue
+		// Also catch disarmament outside an engagement. Retire the hull with the same
+		// salvage deadline as the retreat path, even while NPC crew survive aboard.
+		ship.resolve_disarmed("disarmed (reconcile)")
+
+	// Top up each band to its share of the target
+	var/list/deficit_by_zone = list()
+	for(var/i in 1 to pirate_count_target)
+		var/zone_type = pool_zones[((i - 1) % length(pool_zones)) + 1]
+		deficit_by_zone["[zone_type]"] += 1
+	for(var/obj/structure/overmap/ship/npc/ship as anything in active_ships)
+		if(!ship_holds_pool_slot(ship))
+			continue
+		deficit_by_zone["[ship.pool_zone_type]"] -= 1
+	for(var/list/claim as anything in in_flight_spawns)
+		deficit_by_zone["[claim["zone"]]"] -= 1
+
+	for(var/zone_type in pool_zones)
+		var/deficit = deficit_by_zone["[zone_type]"]
+		if(deficit <= 0)
+			continue
+		log_world("SSnpc_ships: Reconcile topping up [deficit] pirate(s) in zone [zone_type]")
+		for(var/i in 1 to deficit)
+			var/list/claim = claim_spawn_slot(zone_type)
+			INVOKE_ASYNC(src, PROC_REF(run_claimed_spawn), claim)
 
 /**
  * Removes a ship from tracking (called when ship is deleted).
@@ -244,8 +394,9 @@ SUBSYSTEM_DEF(npc_ships)
  * @param ship_type_path The ship type path
  */
 /datum/controller/subsystem/npc_ships/proc/create_npc_ship(template_path, turf/spawn_turf, ship_type_path)
-	UNTIL(!SSshuttle.shuttle_loading)
-	SSshuttle.shuttle_loading = TRUE
+	return SSshuttle.run_template_load(CALLBACK(src, PROC_REF(create_npc_ship_impl), template_path, spawn_turf, ship_type_path))
+
+/datum/controller/subsystem/npc_ships/proc/create_npc_ship_impl(template_path, turf/spawn_turf, ship_type_path, datum/shuttle_template_load/load_owner)
 
 	var/datum/map_template/shuttle/voidcrew/template_instance
 	if(istype(template_path, /datum/map_template/shuttle/voidcrew))
@@ -254,33 +405,33 @@ SUBSYSTEM_DEF(npc_ships)
 		template_instance = new template_path()
 	else
 		stack_trace("create_npc_ship called with invalid template: [template_path]")
-		SSshuttle.shuttle_loading = FALSE
 		return null
 
 	if(!template_instance)
-		SSshuttle.shuttle_loading = FALSE
 		return null
+
+	var/datum/worldgen_probe/probe = worldgen_begin("ship-npc", "[template_instance.name]")
 
 	var/obj/structure/overmap/ship/npc/ship = new ship_type_path(spawn_turf)
 
 	if(!ship || QDELETED(ship))
-		SSshuttle.shuttle_loading = FALSE
+		worldgen_end(probe, "spawn-failed")
 		return null
 
 	if(!ship.setup_from_template(template_instance))
 		stack_trace("NPC ship failed to setup from template [template_path]")
 		qdel(ship)
-		SSshuttle.shuttle_loading = FALSE
+		worldgen_end(probe, "setup-failed")
 		return null
 
 	SSair.can_fire = FALSE
-	var/obj/docking_port/mobile/voidcrew/loaded = SSshuttle.action_load(ship.source_template)
-	SSair.can_fire = TRUE
-	SSshuttle.shuttle_loading = FALSE
+	var/obj/docking_port/mobile/voidcrew/loaded = SSshuttle.action_load(ship.source_template, load_owner = load_owner)
+	SSair.can_fire = load_owner.previous_air_can_fire
 
 	if(!loaded)
 		stack_trace("Failed to load shuttle for NPC ship [template_path]")
 		qdel(ship)
+		worldgen_end(probe, "load-failed")
 		return null
 
 	loaded.current_ship = ship
@@ -291,6 +442,7 @@ SUBSYSTEM_DEF(npc_ships)
 	ship.calculate_mass()
 	ship.initialize_ai()
 
+	worldgen_end(probe)
 	return ship
 
 // ========== ADMIN VERBS ==========
@@ -339,7 +491,8 @@ SUBSYSTEM_DEF(npc_ships)
 
 	var/list/lines = list()
 	lines += "=== NPC Ship Status ==="
-	lines += "Active ships: [length(SSnpc_ships.active_ships)]/[SSnpc_ships.pirate_count_target]"
+	lines += "Pool slots held: [SSnpc_ships.count_pool_ships()]/[SSnpc_ships.pirate_count_target] ([length(SSnpc_ships.in_flight_spawns)] spawning)"
+	lines += "Tracked ship objects: [length(SSnpc_ships.active_ships)] (includes resolved wrecks and one-off dispatches)"
 	lines += ""
 	lines += "Active Factions:"
 	for(var/faction in SSnpc_ships.active_faction_types)

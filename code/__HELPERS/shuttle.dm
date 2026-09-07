@@ -346,6 +346,12 @@ GLOBAL_LIST_EMPTY(shuttle_frames_by_turf)
 		var/list/area_turfs = checked_area.get_turfs_by_zlevel(z)
 		if(!checked_area.allow_shuttle_docking)
 			. |= INTERSECTS_NON_WHITELISTED_AREA
+		// VOIDCREW EDIT ADDITION: a virtual domain's reservation floor is plain
+		// /area/space, which whitelists docking. Without this a bitrunner frames up a
+		// shuttle inside VR and flies it - and everything they looted - back to the ship.
+		else if(SSbitrunning.is_domain_turf(checked_turf))
+			. |= INTERSECTS_NON_WHITELISTED_AREA
+		// VOIDCREW EDIT END
 		if(checked_area.apc)
 			var/obj/machinery/power/apc/apc = checked_area.apc
 			var/list/wallmount_comps = apc.GetComponents(/datum/component/wall_mounted)
@@ -496,7 +502,7 @@ GLOBAL_LIST_EMPTY(shuttle_frames_by_turf)
 	shuttle.underlying_areas_by_turf += underlying_areas
 	SEND_SIGNAL(shuttle, COMSIG_SHUTTLE_EXPANDED, turfs)
 	if(bounds_need_recalculation)
-		QDEL_NULL(shuttle.assigned_transit)
+		release_assigned_transit(shuttle) //VOID EDIT - was QDEL_NULL, which leaks the reservation
 		shuttle.calculate_docking_port_information()
 	shuttle.initiate_docking(shuttle.get_docked(), force = TRUE)
 
@@ -556,5 +562,5 @@ GLOBAL_LIST_EMPTY(shuttle_frames_by_turf)
 	if(docking_port_needs_relocated)
 		shuttle.forceMove(pick(shuttle.underlying_areas_by_turf))
 	if(bounds_need_recalculation)
-		QDEL_NULL(shuttle.assigned_transit)
+		release_assigned_transit(shuttle) //VOID EDIT - was QDEL_NULL, which leaks the reservation
 		shuttle.calculate_docking_port_information()

@@ -13,10 +13,10 @@
 
 	/// Our ship reference
 	var/obj/structure/overmap/ship/current_ship
-	/// Currently targeted enemy ship (fully locked)
-	var/obj/structure/overmap/ship/target_ship
-	/// Ship we're currently acquiring a lock on
-	var/obj/structure/overmap/ship/targeting_ship
+	/// Currently locked target: an enemy ship or a raidable player outpost
+	var/obj/structure/overmap/target_ship
+	/// Target we're currently acquiring a lock on
+	var/obj/structure/overmap/targeting_ship
 	/// Are we currently acquiring a target lock?
 	var/is_targeting = FALSE
 	/// World time when targeting started
@@ -27,8 +27,12 @@
 	var/list/linked_launchers = list()
 	/// List of linked laser turrets (weakrefs)
 	var/list/linked_turrets = list()
-	/// Linked shield generator (weakref)
-	var/datum/weakref/linked_shield_ref
+	/// List of linked assault pod tubes (weakrefs)
+	var/list/linked_pod_tubes = list()
+	/// List of linked shield generators (weakrefs). The ship runs one shared shield
+	/// pool fed by every generator aboard, so this has to be a list - most hulls mount
+	/// two or three and a single slot silently drops all but the last one.
+	var/list/linked_shields = list()
 	/// Global power level for all turrets (0.25 to 2.0)
 	var/turret_power_level = 1
 	/// Is cloaking device active on our ship?
@@ -41,8 +45,6 @@
 	var/selected_missile_type
 	/// Selected approach direction for missiles and lasers (NORTH/SOUTH/EAST/WEST or null for auto)
 	var/selected_approach_direction
-	/// UI theme preference
-	var/theme
 
 	// ===== INTERDICTOR VARIABLES =====
 	/// Linked interdictor machine (weakref)
@@ -81,6 +83,7 @@
 	actions += new /datum/action/innate/ship_combat/fire_laser(src)
 	actions += new /datum/action/innate/ship_combat/fire_all_lasers(src)
 	actions += new /datum/action/innate/ship_combat/adjust_laser_power(src)
+	actions += new /datum/action/innate/ship_combat/launch_pod(src)
 
 	reticle = new(null, src)
 
@@ -121,6 +124,16 @@
 		if(turret)
 			turret.unlink_console()
 	linked_turrets.Cut()
+	for(var/datum/weakref/ref in linked_shields)
+		var/obj/machinery/ship_combat/shield_generator/gen = ref.resolve()
+		if(gen)
+			gen.unlink_console()
+	linked_shields.Cut()
+	for(var/datum/weakref/ref in linked_pod_tubes)
+		var/obj/machinery/ship_combat/pod_launcher/tube = ref.resolve()
+		if(tube)
+			tube.unlink_console()
+	linked_pod_tubes.Cut()
 	QDEL_NULL(reticle)
 	current_ship = null
 	return ..()
@@ -129,6 +142,7 @@
 	. = ..()
 	. += span_notice("Linked launchers: [length(linked_launchers)]")
 	. += span_notice("Linked laser turrets: [length(linked_turrets)]")
+	. += span_notice("Linked assault pod tubes: [length(linked_pod_tubes)]")
 	var/obj/machinery/ship_combat/interdictor/interdictor = linked_interdictor_ref?.resolve()
 	if(interdictor)
 		. += span_notice("Linked interdictor: [interdictor.name]")

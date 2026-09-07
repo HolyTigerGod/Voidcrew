@@ -37,6 +37,11 @@
 	return ..()
 
 /obj/machinery/computer/security/connect_to_shuttle(mapload, obj/docking_port/mobile/port, obj/docking_port/stationary/dock)
+	// VOIDCREW EDIT ADDITION BEGIN - consoles aboard player ships watch their own ship's network only, except screens that aren't camera consoles (voidcrew/edits/machinery/camera.dm)
+	if(ship_scoped_network && istype(port, /obj/docking_port/mobile/voidcrew))
+		network = list(voidcrew_ship_camera_net(port))
+		return
+	// VOIDCREW EDIT ADDITION END
 	for(var/i in network)
 		network -= i
 		network += "[port.shuttle_id]_[i]"
@@ -88,6 +93,12 @@
 /obj/machinery/computer/security/ui_static_data()
 	var/list/data = list()
 	data["network"] = network
+	// VOIDCREW EDIT ADDITION START - human-readable network names for the UI (voidcrew/edits/machinery/camera.dm)
+	var/list/network_names = list()
+	for(var/net in network)
+		network_names += voidcrew_camera_net_display_name(net)
+	data["networkNames"] = network_names
+	// VOIDCREW EDIT ADDITION END
 	data["mapRef"] = cam_screen.assigned_map
 	data["cameras"] = GLOB.cameranet.get_available_cameras_data(network)
 	return data
@@ -100,9 +111,10 @@
 	if(action == "switch_camera")
 		active_camera?.on_stop_watching(src)
 		var/obj/machinery/camera/selected_camera = locate(params["camera"]) in GLOB.cameranet.cameras
-		active_camera = selected_camera
+		active_camera = can_view_camera(selected_camera) ? selected_camera : null
 
 		if(isnull(active_camera))
+			update_active_camera_screen()
 			return TRUE
 
 		active_camera.on_start_watching(src)
@@ -111,8 +123,14 @@
 		return TRUE
 
 /obj/machinery/computer/security/proc/update_active_camera_screen()
+	// VOIDCREW: a stale/forged reference must not bypass the local camera network.
+	if(active_camera && !can_view_camera(active_camera))
+		active_camera.on_stop_watching(src)
+		active_camera = null
+		last_camera_turf = null
 	// Show static if can't use the camera
 	if(!active_camera?.can_use())
+		last_camera_turf = null
 		cam_screen.show_camera_static()
 		return
 

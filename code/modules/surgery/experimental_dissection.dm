@@ -1,5 +1,5 @@
 ///How many research points you gain from dissecting a Human.
-#define BASE_HUMAN_REWARD 10
+#define BASE_HUMAN_REWARD 100
 
 /datum/surgery/advanced/experimental_dissection
 	name = "Experimental Dissection"
@@ -18,8 +18,13 @@
 	. = ..()
 	if(!.)
 		return .
-	if(HAS_TRAIT_FROM(target, TRAIT_DISSECTED, EXPERIMENTAL_SURGERY_TRAIT))
+	// VOIDCREW EDIT START - a body dissected at a lower tier can be reopened by a higher
+	// dissection tier for the difference in yield, so researching a better dissection
+	// never wastes corpses already processed under the old one. The helper and the
+	// bookkeeping var live in voidcrew/modules/surgery/experimental_dissection.dm.
+	if(HAS_TRAIT_FROM(target, TRAIT_DISSECTED, EXPERIMENTAL_SURGERY_TRAIT) && dissection_value_remaining(target) <= 0)
 		return FALSE
+	// VOIDCREW EDIT END
 	if(target.stat != DEAD)
 		return FALSE
 	return .
@@ -34,12 +39,18 @@
 	)
 	time = 12 SECONDS
 	silicons_obey_prob = TRUE
+	///Research points a baseline human corpse is worth. Upgraded dissection tiers raise this.
+	var/base_value = BASE_HUMAN_REWARD
 
 /datum/surgery_step/experimental_dissection/preop(mob/user, mob/living/target, target_zone, obj/item/tool, datum/surgery/surgery)
 	user.visible_message(span_notice("[user] starts dissecting [target]."), span_notice("You start dissecting [target]."))
 
 /datum/surgery_step/experimental_dissection/success(mob/user, mob/living/target, target_zone, obj/item/tool, datum/surgery/surgery, default_display_results = FALSE)
 	var/points_earned = check_value(target)
+	// VOIDCREW EDIT START - a reopened body only pays out what lower tiers have not already extracted
+	points_earned = max(points_earned - target.dissection_points_paid, 0)
+	target.dissection_points_paid += points_earned
+	// VOIDCREW EDIT END
 	user.visible_message(span_notice("[user] dissects [target], discovering [points_earned] point\s of data!"), span_notice("You dissect [target], finding [points_earned] point\s worth of discoveries, you also write a few notes."))
 
 	var/obj/item/research_notes/the_dossier = new /obj/item/research_notes(user.loc, points_earned, "biology")
@@ -52,23 +63,32 @@
 	return ..()
 
 /datum/surgery_step/experimental_dissection/failure(mob/user, mob/living/carbon/target, target_zone, obj/item/tool, datum/surgery/surgery)
-	var/points_earned = round(check_value(target) * 0.01)
+	// VOIDCREW EDIT START - a botch pays 1% of whatever this tier could still have extracted
+	// and ruins the rest of that value; only a higher tier can reopen the body afterwards.
+	var/remaining_value = max(check_value(target) - target.dissection_points_paid, 0)
+	var/points_earned = round(remaining_value * 0.01)
+	target.dissection_points_paid += remaining_value
+	// VOIDCREW EDIT END
 	user.visible_message(
 		span_notice("[user] dissects [target]!"),
 		span_notice("You dissect [target], but do not find anything particularly interesting."),
 	)
 
-	var/obj/item/research_notes/the_dossier = new /obj/item/research_notes(user.loc, points_earned, "biology")
-	if(!user.put_in_hands(the_dossier) && istype(user.get_inactive_held_item(), /obj/item/research_notes))
-		var/obj/item/research_notes/hand_dossier = user.get_inactive_held_item()
-		hand_dossier.merge(the_dossier)
+	if(points_earned > 0)
+		var/obj/item/research_notes/the_dossier = new /obj/item/research_notes(user.loc, points_earned, "biology")
+		if(!user.put_in_hands(the_dossier) && istype(user.get_inactive_held_item(), /obj/item/research_notes))
+			var/obj/item/research_notes/hand_dossier = user.get_inactive_held_item()
+			hand_dossier.merge(the_dossier)
 
 	target.apply_damage(80, BRUTE, BODY_ZONE_CHEST)
+	// A botched dissection still consumes the corpse. Without this the surgery can be cancelled and
+	// re-run indefinitely on the same body, which was farmable for free notes.
+	ADD_TRAIT(target, TRAIT_DISSECTED, EXPERIMENTAL_SURGERY_TRAIT)
 	return TRUE
 
 ///Calculates how many research points dissecting 'target' is worth.
 /datum/surgery_step/experimental_dissection/proc/check_value(mob/living/target)
-	var/cost = BASE_HUMAN_REWARD
+	var/cost = base_value
 
 	if(ishuman(target))
 		var/mob/living/carbon/human/human_target = target
@@ -85,10 +105,18 @@
 		cost *= 10
 	else if(isalienadult(target))
 		cost *= 5
+	// Fauna is graded by how dangerous it is, so the corpse is worth roughly what it cost to make.
+	// melee_damage_upper lives on /mob/living, so this reads correctly on both basic and simple mobs.
+	else if(ismegafauna(target))
+		cost *= 10
+	else if(istype(target, /mob/living/simple_animal/hostile/asteroid/elite))
+		cost *= 3
+	else if(target.melee_damage_upper > 0)
+		cost /= 3
 	else
 		cost /= 6
 
-	return cost
+	return max(round(cost), 1)
 
 #undef BASE_HUMAN_REWARD
 
@@ -107,7 +135,8 @@
 
 /obj/item/research_notes/Initialize(mapload, value, origin_type)
 	. = ..()
-	if(value)
+	// Explicitly check for null, not truthiness: a passed-in 0 must mean "worthless", not "use the default".
+	if(!isnull(value))
 		src.value = value
 	if(origin_type)
 		src.origin_type = origin_type

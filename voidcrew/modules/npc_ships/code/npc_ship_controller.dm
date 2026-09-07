@@ -24,6 +24,9 @@
 	/// Ships always process (no player interaction needed)
 	continue_processing_when_client = TRUE
 
+	/// Delayed boarding actions belonging to the current encounter.
+	var/list/boarding_timers = list()
+
 /datum/ai_controller/npc_ship/New(atom/new_pawn)
 	// Initialize combat blackboard
 	blackboard[BB_NPC_COMBAT_STATE] = NPC_COMBAT_IDLE
@@ -33,9 +36,11 @@
 	blackboard[BB_NPC_MOVEMENT_MODE] = NPC_MOVEMENT_PATROL
 	blackboard[BB_NPC_CIRCUIT_INDEX] = 1
 
-	// Store spawn zone - ship cannot leave this zone
-	if(new_pawn)
-		var/turf/spawn_turf = get_turf(new_pawn)
+	// Store spawn zone - ship cannot leave this zone. Unconfined hunters skip
+	// this entirely; every zone check downstream is null-safe.
+	var/obj/structure/overmap/ship/npc/npc_pawn = new_pawn
+	if(istype(npc_pawn) && npc_pawn.zone_confined)
+		var/turf/spawn_turf = get_turf(npc_pawn)
 		if(spawn_turf)
 			blackboard[BB_NPC_SPAWN_ZONE] = SSovermap_zones.get_zone(spawn_turf)
 
@@ -89,6 +94,7 @@
 
 /// Override to avoid ai_movement access in parent Destroy
 /datum/ai_controller/npc_ship/Destroy(force)
+	cleanup_boarding_signals()
 	UnpossessPawn(FALSE)
 	if(ai_status)
 		GLOB.ai_controllers_by_status[ai_status] -= src
@@ -249,7 +255,11 @@
 
 	var/combat_state = get_combat_state()
 
-	// If we're hailing, cancel the hail - they're getting away
+	// If we're hailing, cancel the hail - they're getting away. Unconfined
+	// hunters keep the call open and just follow them over the line.
+	var/obj/structure/overmap/ship/npc/our_ship = get_ship()
+	if(our_ship && !our_ship.zone_confined)
+		return
 	if(combat_state == NPC_COMBAT_HAILING)
 		INVOKE_ASYNC(src, PROC_REF(handle_target_escaping_via_zone))
 
@@ -266,30 +276,15 @@
 	clear_blackboard_key(BB_NPC_HAILING_ANNOUNCED)
 	clear_blackboard_key("hailing_reminder_sent")
 
-	// Stop the holopad ringing on target ship
+	// Stop the holopads ringing on target ship
 	if(target && !QDELETED(target))
-		var/obj/machinery/holopad/ship_comms/holopad = find_ship_comms_holopad(target)
-		holopad?.stop_ringing()
+		target.stop_hail_ringing()
 
 	// Announce to pirate ship
 	our_ship?.ship_notify("Target is crossing zones. Hail cancelled.", "COMMS", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
 
 	// Clear target and return to idle
 	clear_target()
-
-/**
- * Find the ship comms holopad on a ship.
- */
-/datum/ai_controller/npc_ship/proc/find_ship_comms_holopad(obj/structure/overmap/ship/target)
-	if(!target?.shuttle?.shuttle_areas)
-		return null
-
-	for(var/area/shuttle_area as anything in target.shuttle.shuttle_areas)
-		var/obj/machinery/holopad/ship_comms/found = locate() in shuttle_area
-		if(found)
-			return found
-
-	return null
 
 /**
  * Handle player aggression during HAILING or NEGOTIATING phase.
@@ -340,8 +335,20 @@
 	var/old_state = blackboard[BB_NPC_COMBAT_STATE]
 	set_blackboard_key(BB_NPC_COMBAT_STATE, new_state)
 
+	// Every transition gets one log line. Round-4 forensics had to reconstruct 21 hours
+	// of a wedged state machine from profiler call ratios, because the only NPC-ship
+	// logging in the tree was the target-acquisition line.
+	if(old_state != new_state)
+		var/obj/structure/overmap/ship/npc/state_ship = get_ship()
+		log_shuttle("NPC_SHIP: [state_ship?.name || "unknown vessel"] combat state: [old_state || "none"] -> [new_state]")
+
+	// Track when a retreat began; retreat_escape gives up after NPC_RETREAT_TIME_LIMIT
+	if(old_state == NPC_COMBAT_RETREATING && new_state != NPC_COMBAT_RETREATING)
+		clear_blackboard_key(BB_NPC_RETREAT_START)
+
 	// When entering retreat mode, lose weapon lock and cancel interdiction
 	if(new_state == NPC_COMBAT_RETREATING && old_state != NPC_COMBAT_RETREATING)
+		set_blackboard_key(BB_NPC_RETREAT_START, world.time)
 		var/obj/structure/overmap/ship/target = get_target()
 		var/obj/structure/overmap/ship/npc/ship = get_ship()
 
@@ -375,6 +382,41 @@
 	return blackboard[BB_NPC_COMBAT_STATE]
 
 /**
+ * Stamps and logs the moment the AI notices its ship parked (any state other than
+ * OVERMAP_SHIP_FLYING). Both subtrees stand down while parked, so before this the
+ * transition was completely silent - round 4's Ghostship docked mid-round and simply
+ * vanished from every log for the remaining ~18 hours, crew alive aboard.
+ *
+ * Also drops any live engagement: a berthed ship can't fight, and a stale target
+ * holds hails, interdiction and the target's engaging_pirate_ref open against a
+ * ship that will not be acting on any of it. The dock signal (on_ship_docked)
+ * already does this for force-docks; this covers the crash-land paths too.
+ *
+ * Called from SelectBehaviors, so it must not sleep.
+ */
+/datum/ai_controller/npc_ship/proc/note_ai_parked()
+	if(blackboard[BB_NPC_PARKED_SINCE])
+		return
+	set_blackboard_key(BB_NPC_PARKED_SINCE, world.time)
+	var/obj/structure/overmap/ship/npc/ship = get_ship()
+	log_shuttle("NPC_SHIP: [ship?.name || "unknown vessel"] AI parked - state=[ship?.state], docked=[ship?.docked || "null"], crashed=[(ship?.has_crash_landed) ? "yes" : "no"], combat_state=[get_combat_state() || "none"]")
+	if(get_target() || get_combat_state() != NPC_COMBAT_IDLE)
+		INVOKE_ASYNC(src, PROC_REF(clear_target))
+
+/**
+ * Clears the parked stamp and logs the recovery, the first planning pass after the
+ * ship reads as flying again - whether our own undock_recovery got it there or an
+ * admin/check_loc() reconciliation did.
+ */
+/datum/ai_controller/npc_ship/proc/note_ai_recovered()
+	var/parked_since = blackboard[BB_NPC_PARKED_SINCE]
+	if(!parked_since)
+		return
+	clear_blackboard_key(BB_NPC_PARKED_SINCE)
+	var/obj/structure/overmap/ship/npc/ship = get_ship()
+	log_shuttle("NPC_SHIP: [ship?.name || "unknown vessel"] AI recovered to flight after [round((world.time - parked_since) / (1 MINUTES), 0.1)] minutes parked")
+
+/**
  * Sets the current target ship.
  * Also marks the target as engaged by this pirate (prevents other pirates from engaging same target).
  */
@@ -383,6 +425,13 @@
 
 	// Clear engaging_pirate on old target if we had one
 	var/obj/structure/overmap/ship/old_target = blackboard[BB_NPC_TARGET]
+
+	// Crew-wipe findings are about one hull. Don't carry "I've seen them alive" or a
+	// half-elapsed wipe timer over onto whoever we point at next.
+	if(old_target != target)
+		clear_blackboard_key(BB_NPC_TARGET_CREW_SEEN)
+		clear_blackboard_key(BB_NPC_CREW_WIPE_SINCE)
+
 	if(old_target && !QDELETED(old_target) && old_target != target)
 		if(old_target.engaging_pirate_ref?.resolve() == our_ship)
 			old_target.engaging_pirate_ref = null
@@ -421,6 +470,8 @@
  * Also cancels any active interdiction and clears engagement tracking.
  */
 /datum/ai_controller/npc_ship/proc/clear_target()
+	cleanup_boarding_signals()
+
 	// Cancel any active interdiction when losing target
 	var/datum/npc_combat_interface/combat = get_combat_interface()
 	combat?.cancel_interdiction()
@@ -432,6 +483,21 @@
 		// Only clear if we're the one engaging (could have been taken over by another pirate in edge cases)
 		if(target.engaging_pirate_ref?.resolve() == our_ship)
 			target.engaging_pirate_ref = null
+
+	// Silence the holopads if we drop a target mid-hail. Every way an encounter can
+	// fall apart - out of range, line of sight lost, target cloaked or crashed,
+	// another pirate taking over - funnels through here, and only the escalate and
+	// zone-transition paths silenced the ring themselves. Anything else left every
+	// pad aboard ringing with no pirate left to answer, since get_hailing_pirates()
+	// only lists ships still in HAILING and still targeting them.
+	// Two pirates can't hail the same ship at once (see is_target_being_hailed), so
+	// our own state is enough to know the ring is ours to stop.
+	if(target && !QDELETED(target) && get_combat_state() == NPC_COMBAT_HAILING)
+		target.stop_hail_ringing()
+
+	// Barter mode is a property of one encounter, not of us - don't carry an empty
+	// wallet finding over onto whoever we target next.
+	clear_blackboard_key(BB_NPC_BROKE_BARTER)
 
 	set_target(null)
 	set_combat_state(NPC_COMBAT_IDLE)
@@ -483,6 +549,13 @@
 		clear_target()
 		// Target is now on our "paid" list (handled by negotiation datum)
 	else
+		// A yellow-band shakedown has nothing but the siphon behind it - no guns,
+		// no boarders. Refuse it, stall it out or run, and they take the money
+		// themselves: acquire_lock hands off to SIPHONING once the lock lands.
+		if(hail_escalates_to_siphon())
+			set_combat_state(NPC_COMBAT_ENGAGING)
+			return
+
 		// Double flee attempt = straight to ship combat (player was already warned)
 		if(reason == "player_moved")
 			set_combat_state(NPC_COMBAT_COMBAT)
@@ -520,10 +593,91 @@
 // ========== PHASED BOARDING COMBAT SYSTEM ==========
 
 /**
- * Start the boarding phase after negotiation fails.
- * This initiates the wave-based combat system instead of immediate ship combat.
+ * The zone a raid against `target` is judged in.
+ *
+ * Always read from the *target's* turf, never our own. Pirates engage from up to
+ * territory_range tiles away, so anywhere near a band boundary the attacker and the
+ * victim routinely sit in different rings - and it is the victim's position that
+ * decides what is allowed to happen to them, not the attacker's. Reading our own
+ * turf here is what silently cancelled yellow raids whenever the pirate happened to
+ * be parked a tile or two outside the band.
  */
+/datum/ai_controller/npc_ship/proc/get_raid_zone(obj/structure/overmap/ship/target)
+	if(QDELETED(target))
+		target = get_target()
+	if(QDELETED(target))
+		return null
+	return SSovermap_zones.get_zone(get_turf(target))
+
+/**
+ * TRUE if the target we are raiding is in the lawless (red) band.
+ * Red runs the full wave gauntlet plus a boss; everywhere else gets the
+ * lighter single-wave raid.
+ */
+/datum/ai_controller/npc_ship/proc/is_red_zone_raid()
+	return get_raid_zone()?.zone_type == ZONE_RED
+
+/**
+ * TRUE if the thing waiting at the end of this hail is the data siphon rather
+ * than guns or a boarding party - i.e. a yellow-band shakedown.
+ *
+ * Weapons and boarding pods are both barred outside red, so a hail there that
+ * the crew ignores or refuses can only be made good on out of their accounts.
+ *
+ * Read live off the target's band rather than cached when the hail opens: we sit
+ * up to territory_range tiles away and either of us can drift over a band line
+ * mid-negotiation.
+ */
+/datum/ai_controller/npc_ship/proc/hail_escalates_to_siphon()
+	if(blackboard[BB_NPC_BROKE_BARTER])
+		return FALSE // nothing in the accounts to drain - this one ends in boarders
+	if(is_red_zone_raid())
+		return FALSE // red settles it with guns
+	var/obj/structure/overmap/ship/npc/ship = get_ship()
+	return ship?.siphon_goal_percent > 0 // customs assesses fines, it doesn't siphon
+
+/**
+ * TRUE if the target has reached somewhere we are not allowed to touch them -
+ * i.e. they actually escaped, as opposed to merely standing on the other side of
+ * a band line from us. Green forbids both weapons and interdiction, so it is the
+ * only genuine sanctuary.
+ */
+/datum/ai_controller/npc_ship/proc/target_reached_sanctuary(obj/structure/overmap/ship/target)
+	var/datum/overmap_zone/zone = get_raid_zone(target)
+	if(!zone)
+		return FALSE // unknown position isn't proof of escape; other checks handle a lost target
+	return zone.zone_type == ZONE_GREEN
+
+/**
+ * How many boarding waves to run before the boss phase, for the band we're
+ * fighting in.
+ */
+/datum/ai_controller/npc_ship/proc/get_boarding_wave_count()
+	return is_red_zone_raid() ? NPC_BOARDING_WAVE_COUNT : NPC_BOARDING_WAVE_COUNT_YELLOW
+
+/**
+ * End a yellow-zone raid. The single wave has been repelled, so the pirate
+ * writes this target off and leaves - there is no boss phase outside of red.
+ *
+ * clear_target() does the actual cleanup: it cancels interdiction, releases
+ * engaging_pirate_ref so other pirates can engage, and drops us back to IDLE
+ * so we resume patrolling. The scan memory set in scan_wealth keeps us off
+ * this ship for NPC_SCAN_MEMORY_TIME.
+ */
+/datum/ai_controller/npc_ship/proc/end_yellow_raid()
+	var/obj/structure/overmap/ship/npc/ship = get_ship()
+	var/obj/structure/overmap/ship/target = get_target()
+
+	if(target && !QDELETED(target))
+		target.ship_notify("Boarding party eliminated! [ship?.name || "The attacker"] is breaking off.", "COMBAT", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
+	ship?.ship_notify("Boarding party lost. Disengaging.", "COMMS", SHIP_NOTIFY_WARNING, 'voidcrew/sound/notify2.ogg', 50)
+
+	clear_target()
+
 /datum/ai_controller/npc_ship/proc/start_boarding_phase()
+	if(!validate_boarding_target())
+		return FALSE
+
 	var/obj/structure/overmap/ship/npc/pirate/ship = get_ship()
 	var/obj/structure/overmap/ship/target = get_target()
 
@@ -558,10 +712,21 @@
 	// T+8s: Boarding announcement
 	// T+38s: First wave launches (30s after announcement)
 
-	addtimer(CALLBACK(src, PROC_REF(boarding_phase_interdiction)), 5 SECONDS)
-	addtimer(CALLBACK(src, PROC_REF(boarding_phase_announcement)), 8 SECONDS)
-	addtimer(CALLBACK(src, PROC_REF(launch_boarding_wave), 1), 38 SECONDS)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(boarding_phase_interdiction)), 5 SECONDS, TIMER_STOPPABLE)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(boarding_phase_announcement)), 8 SECONDS, TIMER_STOPPABLE)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(launch_boarding_wave), 1), 38 SECONDS, TIMER_STOPPABLE)
 
+	return TRUE
+
+/// Boarding callbacks can run between AI ticks, including after docking starts.
+/datum/ai_controller/npc_ship/proc/validate_boarding_target()
+	var/obj/structure/overmap/ship/npc/ship = get_ship()
+	var/obj/structure/overmap/ship/target = get_target()
+	if(QDELETED(ship) || QDELETED(target) || ship.state != OVERMAP_SHIP_FLYING || target.state != OVERMAP_SHIP_FLYING)
+		if(!QDELETED(target))
+			SEND_SIGNAL(target, COMSIG_SHIP_TARGETING_STOPPED, ship)
+		abort_boarding()
+		return FALSE
 	return TRUE
 
 /**
@@ -570,6 +735,8 @@
 /datum/ai_controller/npc_ship/proc/boarding_phase_interdiction()
 	// Check we're still in boarding state (didn't escalate to combat)
 	if(get_combat_state() != NPC_COMBAT_BOARDING)
+		return
+	if(!validate_boarding_target())
 		return
 
 	var/obj/structure/overmap/ship/target = get_target()
@@ -585,6 +752,9 @@
  * Delayed boarding announcement during boarding phase setup.
  */
 /datum/ai_controller/npc_ship/proc/boarding_phase_announcement()
+	if(!validate_boarding_target())
+		return
+
 	var/obj/structure/overmap/ship/npc/pirate/ship = get_ship()
 	var/obj/structure/overmap/ship/target = get_target()
 
@@ -623,6 +793,8 @@
 	// Check we're still in boarding state (didn't escalate to combat)
 	var/combat_state = get_combat_state()
 	if(combat_state != NPC_COMBAT_BOARDING)
+		return FALSE
+	if(!validate_boarding_target())
 		return FALSE
 
 	var/obj/structure/overmap/ship/npc/pirate/ship = get_ship()
@@ -786,12 +958,17 @@
 	SEND_SIGNAL(src, COMSIG_BOARDING_WAVE_COMPLETE, current_wave)
 
 	// Check if this was the final wave
-	if(current_wave >= NPC_BOARDING_WAVE_COUNT)
-		// All waves defeated - start boss cooldown
-		start_boss_cooldown()
-	else
+	if(current_wave < get_boarding_wave_count())
 		// Start cooldown before next wave
 		start_wave_cooldown(current_wave)
+		return
+
+	// Final wave cleared. Red escalates to the faction boss; yellow raids have
+	// no boss, so the pirate gives up on this target and breaks off.
+	if(is_red_zone_raid())
+		start_boss_cooldown()
+	else
+		end_yellow_raid()
 
 /**
  * Start the cooldown period between waves.
@@ -824,7 +1001,7 @@
 	target.ship_notify("Wave [completed_wave] repelled! Next wave in 30 seconds...", "COMBAT", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
 
 	// Schedule next wave
-	addtimer(CALLBACK(src, PROC_REF(end_wave_cooldown), next_wave), NPC_BOARDING_WAVE_COOLDOWN)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(end_wave_cooldown), next_wave), NPC_BOARDING_WAVE_COOLDOWN, TIMER_STOPPABLE)
 
 /**
  * End the cooldown and launch the next wave.
@@ -877,12 +1054,15 @@
 	target.ship_notify("All waves repelled! Enemy commander boarding in 30 seconds...", "COMBAT", SHIP_NOTIFY_WARNING, 'voidcrew/sound/notify.ogg', 50)
 
 	// Schedule boss spawn
-	addtimer(CALLBACK(src, PROC_REF(spawn_boarding_boss)), NPC_BOARDING_WAVE_COOLDOWN)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(spawn_boarding_boss)), NPC_BOARDING_WAVE_COOLDOWN, TIMER_STOPPABLE)
 
 /**
  * Spawn the faction boss after all waves are defeated.
  */
 /datum/ai_controller/npc_ship/proc/spawn_boarding_boss()
+	if(get_combat_state() != NPC_COMBAT_BOARDING_COOLDOWN || !validate_boarding_target())
+		return
+
 	// Guard against duplicate boss spawns
 	if(blackboard[BB_NPC_BOARDING_BOSS])
 		return
@@ -998,35 +1178,123 @@
 	INVOKE_ASYNC(src, PROC_REF(check_player_crew_status))
 
 /**
- * Check if all player crew are dead - pirates win!
+ * A tracked crewmember died - re-read the target and see if that was the last of them.
+ *
+ * The tracked list itself is only a prompt to look, never the verdict. It's a snapshot
+ * taken when the raid opened, so it misses anyone who latejoined, was EVA or on a planet
+ * at the time, or got cloned since - all of whom are still very much aboard and shooting.
  */
 /datum/ai_controller/npc_ship/proc/check_player_crew_status()
-	var/list/tracked_crew = blackboard[BB_NPC_BOARDING_PLAYER_CREW]
-	if(!tracked_crew)
-		return
+	check_crew_eliminated()
 
-	// Count living, connected players
-	var/living_players = 0
-	for(var/mob/living/carbon/human/H as anything in tracked_crew)
-		if(!QDELETED(H) && H.stat != DEAD && H.client)
-			living_players++
+/**
+ * How many living crew are aboard `target` right now.
+ *
+ * Returns -1 when the ship can't be read at all (no shuttle, areas not resolved yet) so
+ * callers can tell "nobody left" apart from "couldn't look" - treating the second as the
+ * first would hand the pirate a victory every time a ship is mid-transit.
+ *
+ * Counts connected carbons and silicons only. Boarders are /mob/living/basic and don't
+ * qualify even if a ghost is driving one, and a body whose player has disconnected isn't
+ * defending anything, so it doesn't hold the raid open either.
+ */
+/datum/ai_controller/npc_ship/proc/count_living_crew(obj/structure/overmap/ship/target)
+	if(QDELETED(target))
+		target = get_target()
+	if(QDELETED(target))
+		return -1
 
-	if(living_players > 0)
-		return
+	var/list/shuttle_areas = target.shuttle?.shuttle_areas
+	if(!length(shuttle_areas))
+		return -1
 
-	// All players dead - pirates win!
+	// Walk the (small) player list and test their area against the shuttle's, rather than
+	// walking every turf of every shuttle area - this runs on a 5 second poll per pirate.
+	var/count = 0
+	for(var/mob/living/crew in GLOB.player_list)
+		if(crew.stat == DEAD)
+			continue
+		if(!iscarbon(crew) && !issilicon(crew))
+			continue
+		var/area/crew_area = get_area(crew)
+		if(!crew_area || !shuttle_areas[crew_area])
+			continue
+		count++
+	return count
+
+/**
+ * Check whether we've killed everyone aboard our target, and break off if we have.
+ *
+ * Two gates keep this from firing on a ship we simply can't see into:
+ * - we only ever call a wipe on a ship we have previously read living crew aboard, so an
+ *   unreadable ship or one nobody was ever on is left alone;
+ * - zero has to hold for NPC_CREW_WIPE_CONFIRM_TIME, so a defib, a crit recovery or a
+ *   momentary unreadable ship puts the raid straight back on.
+ *
+ * Returns TRUE if this call declared the wipe.
+ */
+/datum/ai_controller/npc_ship/proc/check_crew_eliminated(obj/structure/overmap/ship/target)
+	if(QDELETED(target))
+		target = get_target()
+	if(QDELETED(target))
+		return FALSE
+
+	// Already leaving (or already finished with them) - nothing to declare.
+	var/combat_state = get_combat_state()
+	if(combat_state == NPC_COMBAT_DISENGAGING || combat_state == NPC_COMBAT_DISABLED || combat_state == NPC_COMBAT_IDLE)
+		return FALSE
+
+	var/living_crew = count_living_crew(target)
+	if(living_crew < 0)
+		return FALSE // couldn't read the ship - not the same thing as an empty one
+
+	if(living_crew > 0)
+		set_blackboard_key(BB_NPC_TARGET_CREW_SEEN, TRUE)
+		clear_blackboard_key(BB_NPC_CREW_WIPE_SINCE)
+		return FALSE
+
+	// Never seen anyone alive on this ship - it's not a crew we wiped, so it isn't ours to
+	// declare victory over.
+	if(!blackboard[BB_NPC_TARGET_CREW_SEEN])
+		return FALSE
+
+	var/wipe_since = blackboard[BB_NPC_CREW_WIPE_SINCE]
+	if(!wipe_since)
+		set_blackboard_key(BB_NPC_CREW_WIPE_SINCE, world.time)
+		return FALSE
+
+	if(world.time < wipe_since + NPC_CREW_WIPE_CONFIRM_TIME)
+		return FALSE
+
+	// Scanning or hailing means we never laid a finger on them - whatever killed this crew,
+	// it wasn't us. Drop the mark quietly rather than claiming a victory over it.
+	// clear_target() silences the hail ring on the way out.
+	if(combat_state == NPC_COMBAT_SCANNING || combat_state == NPC_COMBAT_HAILING)
+		var/obj/structure/overmap/ship/npc/our_ship = get_ship()
+		our_ship?.ship_notify("No life signs aboard [target.name]. Breaking off.", "SCANNER", SHIP_NOTIFY_NOTICE)
+		clear_target()
+		return TRUE
+
 	pirates_win()
+	return TRUE
 
 /**
  * Pirates have won - all player crew eliminated.
  * Pirates disengage and leave.
  */
 /datum/ai_controller/npc_ship/proc/pirates_win()
+	// Guard against a second call arriving from another path (a late death signal, the
+	// poll behavior) while we're already leaving.
+	if(get_combat_state() == NPC_COMBAT_DISENGAGING)
+		return
+
 	var/obj/structure/overmap/ship/npc/pirate/ship = get_ship()
 	var/obj/structure/overmap/ship/target = get_target()
 
-	// Clean up
+	// Clean up. The boarders themselves stay aboard - there's no route back off the hull
+	// for them - but nothing about the raid is live any more.
 	cleanup_boarding_signals()
+	clear_blackboard_key(BB_NPC_CREW_WIPE_SINCE)
 
 	// Announce victory
 	ship?.ship_notify("All hostiles eliminated. Disengaging.", "COMBAT", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
@@ -1057,21 +1325,8 @@
 
 	SEND_SIGNAL(src, COMSIG_BOARDING_ESCALATED)
 
-	// Clean up boarding state
+	// Clean up boarding state - any boarders already aboard are on their own now
 	cleanup_boarding_signals()
-
-	// Clear any remaining boarders (they're now on their own)
-	var/list/wave_boarders = blackboard[BB_NPC_BOARDING_WAVE_BOARDERS]
-	if(wave_boarders)
-		for(var/mob/living/boarder as anything in wave_boarders)
-			UnregisterSignal(boarder, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_WAVE_BOARDERS)
-
-	// Clear boss tracking
-	var/mob/living/boss = blackboard[BB_NPC_BOARDING_BOSS]
-	if(boss && !QDELETED(boss))
-		UnregisterSignal(boss, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_BOSS)
 
 	// Announce escalation
 	ship?.ship_notify("Hostile action detected! Switching to weapons combat!", "COMBAT", SHIP_NOTIFY_WARNING, 'voidcrew/sound/alert2.ogg', 25)
@@ -1082,14 +1337,33 @@
 
 /**
  * Clean up all boarding-related signals and state.
+ *
+ * Unregisters the boarders and boss as well as the crew. Every caller wanted that and
+ * every caller tried to do it themselves *after* calling this - reading blackboard keys
+ * this proc had already cleared, so the loops always ran over nothing. Doing it here is
+ * the only place the lists still exist.
  */
 /datum/ai_controller/npc_ship/proc/cleanup_boarding_signals()
+	for(var/timer_id in boarding_timers)
+		deltimer(timer_id)
+	boarding_timers.Cut()
+
 	// Unregister from player crew deaths
 	var/list/tracked_crew = blackboard[BB_NPC_BOARDING_PLAYER_CREW]
-	if(tracked_crew)
-		for(var/mob/living/crew as anything in tracked_crew)
-			if(!QDELETED(crew))
-				UnregisterSignal(crew, COMSIG_LIVING_DEATH)
+	for(var/mob/living/crew as anything in tracked_crew)
+		if(!QDELETED(crew))
+			UnregisterSignal(crew, COMSIG_LIVING_DEATH)
+
+	// Unregister from boarder deaths - the mobs stay aboard, but their deaths no longer
+	// feed wave logic for a raid that's over
+	var/list/wave_boarders = blackboard[BB_NPC_BOARDING_WAVE_BOARDERS]
+	for(var/mob/living/boarder as anything in wave_boarders)
+		if(!QDELETED(boarder))
+			UnregisterSignal(boarder, COMSIG_LIVING_DEATH)
+
+	var/mob/living/boss = blackboard[BB_NPC_BOARDING_BOSS]
+	if(!QDELETED(boss))
+		UnregisterSignal(boss, COMSIG_LIVING_DEATH)
 
 	// Clear boarding blackboard keys
 	clear_blackboard_key(BB_NPC_BOARDING_WAVE)
@@ -1102,28 +1376,11 @@
 	clear_blackboard_key(BB_NPC_BOARDING_TARGET_POS)
 
 /**
- * Abort boarding operation entirely - target escaped to a different zone.
+ * Abort boarding operation entirely after the target escapes or docks.
  * Cleans up all boarding state and returns to IDLE without a target.
  */
 /datum/ai_controller/npc_ship/proc/abort_boarding()
-	// Clean up boarding state
-	cleanup_boarding_signals()
-
-	// Clear any remaining boarders (unregister death signals)
-	var/list/wave_boarders = blackboard[BB_NPC_BOARDING_WAVE_BOARDERS]
-	if(wave_boarders)
-		for(var/mob/living/boarder as anything in wave_boarders)
-			if(!QDELETED(boarder))
-				UnregisterSignal(boarder, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_WAVE_BOARDERS)
-
-	// Clear boss tracking
-	var/mob/living/boss = blackboard[BB_NPC_BOARDING_BOSS]
-	if(boss && !QDELETED(boss))
-		UnregisterSignal(boss, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_BOSS)
-
-	// Fully disengage - clear target and return to idle
+	// Clear pending waves and tracking; anything already dropped aboard stays there.
 	clear_target()
 
 /**
@@ -1134,22 +1391,8 @@
 /datum/ai_controller/npc_ship/proc/escalate_boarding_to_combat(reason)
 	SEND_SIGNAL(src, COMSIG_BOARDING_ESCALATED, reason)
 
-	// Clean up boarding state
+	// Clean up boarding state - any boarders already aboard are on their own now
 	cleanup_boarding_signals()
-
-	// Clear any remaining boarders (they're now on their own)
-	var/list/wave_boarders = blackboard[BB_NPC_BOARDING_WAVE_BOARDERS]
-	if(wave_boarders)
-		for(var/mob/living/boarder as anything in wave_boarders)
-			if(!QDELETED(boarder))
-				UnregisterSignal(boarder, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_WAVE_BOARDERS)
-
-	// Clear boss tracking
-	var/mob/living/boss = blackboard[BB_NPC_BOARDING_BOSS]
-	if(boss && !QDELETED(boss))
-		UnregisterSignal(boss, COMSIG_LIVING_DEATH)
-	clear_blackboard_key(BB_NPC_BOARDING_BOSS)
 
 	// Transition to standard combat (will acquire lock then fight)
 	set_combat_state(NPC_COMBAT_ENGAGING)
@@ -1194,7 +1437,7 @@
 	set_blackboard_key(BB_NPC_BOARDING_WAVE_START_TIME, null)
 
 	// Schedule next wave
-	addtimer(CALLBACK(src, PROC_REF(end_wave_cooldown), next_wave), NPC_BOARDING_WAVE_COOLDOWN)
+	boarding_timers += addtimer(CALLBACK(src, PROC_REF(end_wave_cooldown), next_wave), NPC_BOARDING_WAVE_COOLDOWN, TIMER_STOPPABLE)
 
 /**
  * Check if any boarders have fallen into space and clean them up.

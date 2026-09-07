@@ -2,6 +2,18 @@
 "a" = (
 /turf/template_noop,
 /area/template_noop)
+"b" = (
+/obj/structure/closet/crate/zone_loot/research,
+/turf/open/misc/dirt/jungle/wasteland,
+/area/overmap_encounter/planetoid/wasteland)
+"c" = (
+/obj/effect/zone_mobs/robot/boss,
+/turf/open/misc/dirt/jungle/wasteland,
+/area/overmap_encounter/planetoid/wasteland)
+"e" = (
+/obj/effect/zone_mobs/robot,
+/turf/open/misc/dirt/jungle/wasteland,
+/area/overmap_encounter/planetoid/wasteland)
 "k" = (
 /turf/open/misc/dirt/jungle/wasteland,
 /area/overmap_encounter/planetoid/wasteland)
@@ -14,7 +26,7 @@
 	desc = "Director?";
 	name = "the research director"
 	},
-/obj/item/gun/energy/e_gun/rdgun,
+/obj/item/gun/energy/e_gun,
 /obj/item/clothing/suit/toggle/labcoat,
 /obj/item/clothing/under/rank/rnd/research_director/skirt,
 /obj/item/clothing/shoes/sneakers/brown,
@@ -319,17 +331,17 @@ a
 a
 k
 k
+e
 k
 k
 k
-k
-k
+c
 D
 k
 k
 k
 k
-k
+e
 k
 k
 k
@@ -348,7 +360,7 @@ k
 k
 k
 k
-k
+b
 k
 k
 k
@@ -372,7 +384,7 @@ k
 k
 k
 k
-k
+e
 k
 k
 k

@@ -1,8 +1,23 @@
 // ========== TGUI INTERFACE ==========
 
+/**
+ * Faceplate art for the tactical interface. Its bezels are drawn at the exact
+ * panel GEOMETRY coordinates in ShipCombatConsole.tsx, so the art has to be
+ * redrawn if that layout moves, or the bezels will no longer line up with the
+ * wells.
+ */
+/datum/asset/simple/combat_faceplate
+	assets = list(
+		"combat_faceplate.png" = 'voidcrew/modules/ship_combat/console/combat_faceplate.png',
+	)
+
+/obj/machinery/computer/camera_advanced/ship_combat/ui_assets(mob/user)
+	return list(get_asset_datum(/datum/asset/simple/combat_faceplate))
+
 /obj/machinery/computer/camera_advanced/ship_combat/attack_hand(mob/user, list/modifiers)
 	// Don't call parent - we handle our own UI
 	if(machine_stat & (NOPOWER|BROKEN))
+		balloon_alert(user, (machine_stat & BROKEN) ? "console broken!" : "no power!")
 		return
 
 	attempt_ship_connection()
@@ -39,13 +54,24 @@
 
 	data["connected"] = !!current_ship
 	data["ship_name"] = current_ship?.display_name
+	data["ship_class"] = current_ship?.source_template?.name
+	data["ship_mass"] = current_ship?.mass || 0
+	data["integrity"] = current_ship ? current_ship.get_integrity_percent() : 100
+	data["ship_disabled"] = current_ship?.integrity_state == SHIP_INTEGRITY_DISABLED
 	data["ship_docked"] = current_ship?.is_in_ship_to_ship_dock()  // Block shields when in ship-to-ship dock (either direction)
 	data["hidden_in_nebula"] = current_ship?.hidden_in_nebula  // Combat systems offline when hidden
 	data["cloak_active"] = cloak_active
 	data["attack_mode"] = attack_mode
 	data["is_in_attack_mode"] = (eyeobj && user.remote_control == eyeobj)
-	data["target_name"] = target_ship?.display_name
+	data["target_name"] = target_ship ? contact_label(target_ship) : null
 	data["target_ref"] = target_ship ? REF(target_ship) : null
+	// Which way missiles and laser fire approach the target; null reads as auto
+	data["approach_direction"] = selected_approach_direction ? dir2text(selected_approach_direction) : null
+	// Completed hostile weapons locks on US, for the defense readout
+	var/list/locked_by = list()
+	for(var/obj/structure/overmap/ship/attacker as anything in current_ship?.locked_on_by)
+		locked_by += attacker.display_name || attacker.name
+	data["locked_by"] = locked_by
 
 	// Zone information
 	if(current_ship && SSovermap_zones.zones_active)
@@ -92,7 +118,7 @@
 
 	// Targeting lock-in-progress data
 	data["is_targeting"] = is_targeting
-	data["targeting_ship_name"] = targeting_ship?.display_name
+	data["targeting_ship_name"] = targeting_ship ? contact_label(targeting_ship) : null
 	data["targeting_ship_ref"] = targeting_ship ? REF(targeting_ship) : null
 	if(is_targeting && targeting_start_time)
 		var/elapsed = world.time - targeting_start_time
@@ -118,9 +144,11 @@
 				// Check if ship is visible (not cloaked)
 				if(S.invisibility > INVISIBILITY_NONE)
 					continue
-				// Calculate distance
+				// Calculate distance and relative offset (east/north positive) for the scope plot
 				var/turf/target_turf = get_turf(S)
 				var/distance = target_turf ? get_dist(our_turf, target_turf) : 0
+				var/rel_x = target_turf ? (target_turf.x - our_turf.x) : 0
+				var/rel_y = target_turf ? (target_turf.y - our_turf.y) : 0
 				// Get target's zone
 				var/target_zone_type = null
 				var/target_zone_name = "Unknown"
@@ -131,18 +159,65 @@
 						target_zone_name = target_zone.name
 				// Can target if neither ship is in Neutral zone
 				var/can_target = (our_zone_type != ZONE_GREEN) && (target_zone_type != ZONE_GREEN)
+				// Identity is the ship's to grant, not this console's: an unscanned
+				// hull is a return on the scope and nothing more, exactly as the helm
+				// chart draws it. See knows_contact() in console_targeting.dm.
+				var/known = knows_contact(S)
 				nearby_ships += list(list(
-					"name" = S.display_name || S.name,
+					"name" = known ? (S.display_name || S.name) : "unknown contact",
+					"identified" = known,
 					"ref" = REF(S),
-					"shields" = S.shield_health,
-					"shields_max" = S.shield_max_health,
-					"integrity" = 100,  // Ship integrity - placeholder, ships don't have a direct integrity stat
+					// Withheld rather than zeroed behind a drawn bar: the client renders
+					// no readout at all for an unidentified contact, so these are only
+					// ever read once `identified` is set.
+					"shields" = known ? S.shield_health : 0,
+					"shields_max" = known ? S.shield_max_health : 0,
+					"integrity" = known ? S.get_integrity_percent() : 0,
 					"integrity_max" = 100,
 					"distance" = distance,
-					"speed" = round(S.get_speed(), 0.1),  // Speed in spM (spaces per minute) - same as helm
+					"dx" = rel_x,
+					"dy" = rel_y,
+					"is_outpost" = FALSE,
+					"speed" = known ? round(S.get_speed(), 0.1) : 0,  // Speed in spM (spaces per minute) - same as helm
 					"zone_type" = target_zone_type,
 					"zone_name" = target_zone_name,
 					"same_zone" = can_target,
+				))
+			// Raidable player outposts in range are valid siege targets
+			for(var/obj/structure/overmap/dynamic/player_outpost/outpost as anything in GLOB.player_outposts)
+				if(!outpost.raidable)
+					continue
+				var/turf/outpost_turf = get_turf(outpost)
+				if(!outpost_turf || outpost_turf.z != our_turf.z)
+					continue
+				var/distance = get_dist(our_turf, outpost_turf)
+				if(distance > COMBAT_TARGETING_RANGE)
+					continue
+				var/target_zone_type = null
+				var/target_zone_name = "Unknown"
+				if(SSovermap_zones?.initialized)
+					var/datum/overmap_zone/target_zone = SSovermap_zones.get_zone(outpost_turf)
+					if(target_zone)
+						target_zone_type = target_zone.zone_type
+						target_zone_name = target_zone.name
+				nearby_ships += list(list(
+					"name" = outpost.name,
+					// An outpost is a fixture, not a vessel. It doesn't move, it can't
+					// be mistaken for anything else, and the helm never anonymised one.
+					"identified" = TRUE,
+					"ref" = REF(outpost),
+					"shields" = 0,
+					"shields_max" = 0,
+					"integrity" = 100,
+					"integrity_max" = 100,
+					"distance" = distance,
+					"dx" = outpost_turf.x - our_turf.x,
+					"dy" = outpost_turf.y - our_turf.y,
+					"is_outpost" = TRUE,
+					"speed" = 0,
+					"zone_type" = target_zone_type,
+					"zone_name" = target_zone_name,
+					"same_zone" = (our_zone_type != ZONE_GREEN),
 				))
 	data["nearby_ships"] = nearby_ships
 
@@ -156,13 +231,32 @@
 			linked_launchers -= ref
 			continue
 		total_count++
-		var/is_ready = launcher.can_fire()
+		var/is_ready = launcher.can_fire(target_ship)
 		if(is_ready)
 			ready_count++
-		launchers += list(launcher.get_status())
+		launchers += list(launcher.get_status(target_ship))
 	data["launchers"] = launchers
 	data["launchers_ready"] = ready_count
 	data["launchers_total"] = total_count
+
+	// Get assault pod tube status
+	var/list/pod_tubes = list()
+	var/pods_ready_count = 0
+	var/pods_total_count = 0
+	for(var/datum/weakref/ref in linked_pod_tubes.Copy())
+		var/obj/machinery/ship_combat/pod_launcher/tube = ref.resolve()
+		if(!tube)
+			linked_pod_tubes -= ref
+			continue
+		pods_total_count++
+		if(tube.can_fire(target_ship))
+			pods_ready_count++
+		pod_tubes += list(tube.get_status(target_ship))
+	data["pod_tubes"] = pod_tubes
+	data["pod_tubes_ready"] = pods_ready_count
+	data["pod_tubes_total"] = pods_total_count
+	// Boarding into a live shield kills the pod crew - the plate says so up front
+	data["target_shields_up"] = target_shields_up()
 
 	// Get laser turret status
 	var/list/turrets = list()
@@ -334,6 +428,11 @@
 		data["siphon_goal"] = siphon_status["siphon_goal"]
 		data["siphon_goal_progress"] = siphon_status["goal_progress"]
 		data["siphon_target_name"] = siphon_status["target_name"]
+		// What the locked target is actually carrying - the panel greys the button
+		// out on an empty hull instead of letting the siphon spin up and bounce.
+		// Outposts and other non-ship targets hold no account, so they read zero.
+		var/obj/structure/overmap/ship/siphon_target = target_ship
+		data["siphon_target_credits"] = istype(siphon_target) ? (siphon_target.ship_account?.account_balance || 0) : 0
 	else
 		data["siphon_active"] = FALSE
 		data["siphon_warming_up"] = FALSE
@@ -342,9 +441,7 @@
 		data["siphon_goal"] = 0
 		data["siphon_goal_progress"] = 0
 		data["siphon_target_name"] = null
-
-	// Theme preference
-	data["theme"] = theme
+		data["siphon_target_credits"] = 0
 
 	return data
 
@@ -363,7 +460,9 @@
 			var/target_ref = params["ref"]
 			if(!target_ref)
 				return FALSE
-			var/obj/structure/overmap/ship/new_target = locate(target_ref) in SSovermap.simulated_ships
+			var/obj/structure/overmap/new_target = locate(target_ref) in SSovermap.simulated_ships
+			if(!new_target)
+				new_target = locate(target_ref) in GLOB.player_outposts
 			if(!new_target || new_target == current_ship)
 				return FALSE
 			set_target_ship(new_target, ui.user)
@@ -397,10 +496,18 @@
 			fire_all(ui.user)
 			return TRUE
 
+		if("launch_pod")
+			// Can stop to ask about shields, so it doesn't get to block the UI loop
+			INVOKE_ASYNC(src, PROC_REF(launch_pod), ui.user)
+			return TRUE
+
 		if("start_interdict")
 			var/obj/machinery/ship_combat/interdictor/interdictor = linked_interdictor_ref?.resolve()
 			if(!interdictor)
 				to_chat(ui.user, span_warning("No interdictor linked! Link an interdiction system with a multitool."))
+				return FALSE
+			if(!istype(target_ship, /obj/structure/overmap/ship))
+				to_chat(ui.user, span_warning("Interdiction fields cannot anchor a stationary structure."))
 				return FALSE
 			return interdictor.start_interdiction(target_ship, ui.user)
 
@@ -424,6 +531,7 @@
 		// Shield power allocation (0-200%) - applies to ship's shared shield pool
 		if("set_shield_power")
 			if(!current_ship || !length(current_ship.linked_shield_generators))
+				to_chat(ui.user, span_warning("No shield generators are linked to the ship."))
 				return FALSE
 			var/new_power = params["power"]
 			if(!isnum(new_power))
@@ -432,6 +540,14 @@
 			var/power_mult = new_power / 100
 			current_ship.set_shield_power_allocation(power_mult)
 			invalidate_shield_cache()  // Force immediate UI refresh
+			// The crew just asked for shields. If they cannot come up, say why -
+			// a slider that silently does nothing reads as "shields refuse to work"
+			// (round 4). Generators activate on their next process tick, so report
+			// the blocking condition rather than polling for the state change.
+			if(power_mult > 0 && !current_ship.shields_active)
+				var/reason = current_ship.get_shield_blocker_reason()
+				if(reason)
+					to_chat(ui.user, span_warning(reason))
 			return TRUE
 
 		// Shield burst - sacrifice shields to break interdiction
@@ -489,6 +605,9 @@
 			if(!target_ship)
 				to_chat(ui.user, span_warning("No target locked. Acquire a weapons lock first."))
 				return FALSE
+			if(!istype(target_ship, /obj/structure/overmap/ship))
+				to_chat(ui.user, span_warning("Siphon protocols require a ship-class target."))
+				return FALSE
 			return siphon.player_activate_siphon(ui.user, target_ship)
 
 		if("siphon_deactivate")
@@ -497,8 +616,16 @@
 				siphon.deactivate_siphon()
 			return TRUE
 
-		if("setTheme")
-			theme = params["theme"]
+		// Which side of the target missiles and laser fire come in from
+		if("set_approach_direction")
+			var/dir_name = params["dir"]
+			if(dir_name == "auto")
+				selected_approach_direction = null
+				return TRUE
+			var/new_dir = text2dir(dir_name)
+			if(!(new_dir in GLOB.cardinals))
+				return FALSE
+			selected_approach_direction = new_dir
 			return TRUE
 
 	return FALSE

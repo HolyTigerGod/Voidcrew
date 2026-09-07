@@ -198,11 +198,23 @@
 /obj/machinery/door/firedoor,
 /turf/open/floor/mineral/titanium/white,
 /area/shuttle/voidcrew/scarab/bridge/a)
+"fm" = (
+/obj/structure/cable,
+/obj/effect/turf_decal/bot/right,
+/obj/machinery/computer/bank_machine{
+	dir = 8
+	},
+/turf/open/floor/mineral/titanium/white,
+/area/shuttle/voidcrew/scarab/bridge/a)
 "fA" = (
 /obj/structure/chair/comfy/shuttle{
 	dir = 4
 	},
 /obj/structure/cable,
+/turf/open/floor/mineral/titanium/tiled/white,
+/area/shuttle/voidcrew/scarab/bridge/a)
+"fJ" = (
+/obj/machinery/mission_pad,
 /turf/open/floor/mineral/titanium/tiled/white,
 /area/shuttle/voidcrew/scarab/bridge/a)
 "fL" = (
@@ -267,6 +279,16 @@
 /obj/structure/marker_beacon/cerulean,
 /turf/open/floor/plating/airless,
 /area/shuttle/voidcrew/scarab/dormitories/a)
+"hT" = (
+/obj/structure/table,
+/obj/machinery/airalarm/directional/north,
+/obj/item/storage/fancy/donut_box,
+/obj/item/storage/box/rndboards/all{
+	pixel_x = -4;
+	pixel_y = 7
+	},
+/turf/open/floor/mineral/titanium/white,
+/area/shuttle/voidcrew/scarab/bridge/a)
 "hU" = (
 /obj/effect/turf_decal/stripes/line{
 	dir = 10
@@ -491,12 +513,6 @@
 /obj/structure/fans/tiny,
 /turf/open/floor/pod/light,
 /area/shuttle/voidcrew/scarab/dormitories/a)
-"oT" = (
-/obj/structure/table,
-/obj/machinery/airalarm/directional/north,
-/obj/item/storage/fancy/donut_box,
-/turf/open/floor/mineral/titanium/white,
-/area/shuttle/voidcrew/scarab/bridge/a)
 "ps" = (
 /obj/structure/cable,
 /obj/structure/rack,
@@ -615,12 +631,6 @@
 	},
 /turf/open/floor/mineral/titanium/tiled,
 /area/shuttle/voidcrew/scarab/dormitories/a)
-"rw" = (
-/obj/effect/spawner/structure/window/reinforced/plasma,
-/obj/structure/cable,
-/obj/machinery/door/firedoor,
-/turf/open/floor/plating,
-/area/shuttle/voidcrew/scarab/cargo_bay/a)
 "rE" = (
 /obj/structure/cable,
 /obj/machinery/atmospherics/components/unary/portables_connector{
@@ -764,6 +774,12 @@
 /obj/structure/sign/poster/contraband/principles/directional/north,
 /turf/open/floor/mineral/titanium/tiled,
 /area/shuttle/voidcrew/scarab/dormitories/a)
+"tV" = (
+/obj/machinery/computer/voidcrew_cargo{
+	dir = 4
+	},
+/turf/open/floor/plating,
+/area/shuttle/voidcrew/scarab/cargo_bay/a)
 "tW" = (
 /obj/machinery/digital_clock/directional/south,
 /obj/machinery/suit_storage_unit/medical{
@@ -858,6 +874,12 @@
 /obj/machinery/suit_storage_unit/standard_unit,
 /turf/open/floor/mineral/titanium,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
+"wH" = (
+/obj/machinery/porta_turret/ship_defense{
+	dir = 2
+	},
+/turf/closed/wall/mineral/titanium/nodiagonal,
+/area/shuttle/voidcrew/scarab/engines/a)
 "xe" = (
 /obj/effect/turf_decal/stripes/line{
 	dir = 8
@@ -930,6 +952,7 @@
 /obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer4{
 	dir = 9
 	},
+/obj/structure/cable,
 /obj/structure/tank_dispenser/oxygen,
 /obj/effect/turf_decal/bot,
 /obj/structure/sign/warning/electric_shock/directional/south,
@@ -1002,6 +1025,13 @@
 /obj/structure/handrail,
 /turf/open/floor/pod/light,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
+"Bw" = (
+/obj/effect/turf_decal/bot/right,
+/obj/machinery/computer/mission_board{
+	dir = 8
+	},
+/turf/open/floor/mineral/titanium/white,
+/area/shuttle/voidcrew/scarab/bridge/a)
 "BC" = (
 /obj/machinery/atmospherics/components/unary/vent_pump/on/layer4{
 	dir = 8
@@ -1044,6 +1074,11 @@
 	},
 /turf/open/floor/mineral/titanium/white,
 /area/shuttle/voidcrew/scarab/bridge/a)
+"CQ" = (
+/obj/effect/spawner/structure/window/reinforced/plasma,
+/obj/structure/cable,
+/turf/open/floor/plating,
+/area/shuttle/voidcrew/scarab/cargo_bay/a)
 "CZ" = (
 /obj/structure/cable,
 /obj/structure/handrail{
@@ -1153,13 +1188,6 @@
 	},
 /turf/open/floor/plating/airless,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
-"Hl" = (
-/obj/machinery/door/firedoor,
-/obj/machinery/door/airlock/engineering{
-	name = "Engine Access"
-	},
-/turf/open/floor/mineral/titanium/yellow,
-/area/shuttle/voidcrew/scarab/engines/a)
 "Ho" = (
 /obj/machinery/door/airlock{
 	name = "Bathroom"
@@ -1193,14 +1221,6 @@
 /obj/structure/cable,
 /turf/open/floor/mineral/titanium/tiled,
 /area/shuttle/voidcrew/scarab/dormitories/a)
-"Hx" = (
-/obj/effect/turf_decal/bot/right,
-/obj/structure/frame/computer{
-	anchored = 1;
-	dir = 8
-	},
-/turf/open/floor/mineral/titanium/white,
-/area/shuttle/voidcrew/scarab/bridge/a)
 "HI" = (
 /turf/closed/wall/mineral/titanium/interior,
 /area/shuttle/voidcrew/scarab/cmos_office/a)
@@ -1341,36 +1361,9 @@
 	},
 /turf/open/floor/mineral/titanium/tiled/yellow,
 /area/shuttle/voidcrew/scarab/engines/a)
-"Lc" = (
-/obj/machinery/power/apc/auto_name/directional/north,
-/obj/structure/cable,
-/turf/open/floor/mineral/titanium/tiled/white,
-/area/shuttle/voidcrew/scarab/bridge/a)
 "Lu" = (
 /turf/closed/wall/mineral/titanium/nodiagonal,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
-"LG" = (
-/obj/machinery/door/airlock/engineering{
-	name = "Engineering"
-	},
-/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer2{
-	dir = 1
-	},
-/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer4{
-	dir = 1
-	},
-/obj/machinery/door/firedoor,
-/turf/open/floor/mineral/titanium/yellow,
-/area/shuttle/voidcrew/scarab/engineering/a)
-"LT" = (
-/obj/structure/cable,
-/obj/effect/turf_decal/bot/right,
-/obj/structure/frame/computer{
-	anchored = 1;
-	dir = 8
-	},
-/turf/open/floor/mineral/titanium/white,
-/area/shuttle/voidcrew/scarab/bridge/a)
 "Mc" = (
 /obj/machinery/airalarm/directional/south,
 /obj/structure/closet{
@@ -1403,15 +1396,6 @@
 	},
 /turf/open/floor/mineral/titanium/tiled/white,
 /area/shuttle/voidcrew/scarab/cmos_office/a)
-"Mz" = (
-/obj/effect/spawner/structure/window/reinforced/plasma,
-/obj/machinery/atmospherics/pipe/smart/simple/dark/hidden/layer2{
-	dir = 4
-	},
-/obj/machinery/door/firedoor,
-/obj/structure/cable,
-/turf/open/floor/plating,
-/area/shuttle/voidcrew/scarab/engines/a)
 "MI" = (
 /obj/effect/decal/cleanable/dirt/dust,
 /obj/structure/closet/emcloset/anchored,
@@ -1451,9 +1435,6 @@
 /turf/open/floor/mineral/titanium/tiled/white,
 /area/shuttle/voidcrew/scarab/bridge/a)
 "Nr" = (
-/obj/effect/turf_decal/bot,
-/obj/machinery/autolathe,
-/obj/structure/sign/poster/official/soft_cap_pop_art/directional/east,
 /turf/open/floor/mineral/titanium,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
 "NN" = (
@@ -1473,6 +1454,12 @@
 	dir = 6
 	},
 /turf/open/floor/mineral/titanium,
+/area/shuttle/voidcrew/scarab/dormitories/a)
+"NV" = (
+/obj/machinery/porta_turret/ship_defense{
+	dir = 1
+	},
+/turf/closed/wall/mineral/titanium,
 /area/shuttle/voidcrew/scarab/dormitories/a)
 "Ok" = (
 /obj/structure/window/reinforced/spawner/directional/east,
@@ -1560,6 +1547,12 @@
 	},
 /turf/open/floor/plating,
 /area/shuttle/voidcrew/scarab/cmos_office/a)
+"Qa" = (
+/obj/machinery/door/airlock/engineering{
+	name = "Engine Access"
+	},
+/turf/open/floor/mineral/titanium/yellow,
+/area/shuttle/voidcrew/scarab/engines/a)
 "Qr" = (
 /obj/machinery/door/airlock/external/glass,
 /obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer2{
@@ -1602,12 +1595,6 @@
 	},
 /turf/open/floor/mineral/titanium,
 /area/shuttle/voidcrew/scarab/dormitories/a)
-"SE" = (
-/obj/structure/cable,
-/obj/effect/spawner/structure/window/reinforced/plasma,
-/obj/machinery/door/firedoor,
-/turf/open/floor/plating,
-/area/shuttle/voidcrew/scarab/cargo_bay/a)
 "SK" = (
 /turf/closed/wall/mineral/titanium/nodiagonal,
 /area/shuttle/voidcrew/scarab/bridge/a)
@@ -1624,6 +1611,11 @@
 	},
 /turf/open/floor/mineral/titanium/white,
 /area/shuttle/voidcrew/scarab/cmos_office/a)
+"SY" = (
+/obj/structure/cable,
+/obj/effect/spawner/structure/window/reinforced/plasma,
+/turf/open/floor/plating,
+/area/shuttle/voidcrew/scarab/cargo_bay/a)
 "TJ" = (
 /obj/effect/turf_decal/stripes/red/line{
 	dir = 4
@@ -1631,6 +1623,22 @@
 /obj/structure/handrail,
 /turf/open/floor/pod/light,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
+"Uc" = (
+/obj/machinery/holopad,
+/turf/open/floor/plating,
+/area/shuttle/voidcrew/scarab/commons/a)
+"Uh" = (
+/obj/machinery/door/airlock/engineering{
+	name = "Engineering"
+	},
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer2{
+	dir = 1
+	},
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer4{
+	dir = 1
+	},
+/turf/open/floor/mineral/titanium/yellow,
+/area/shuttle/voidcrew/scarab/engineering/a)
 "UM" = (
 /obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer2{
 	dir = 1
@@ -1676,6 +1684,11 @@
 "We" = (
 /turf/open/floor/mineral/titanium/tiled,
 /area/shuttle/voidcrew/scarab/cargo_bay/a)
+"Wh" = (
+/obj/machinery/power/apc/auto_name/directional/north,
+/obj/structure/cable,
+/turf/open/floor/mineral/titanium/tiled/white,
+/area/shuttle/voidcrew/scarab/bridge/a)
 "Wy" = (
 /obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer4{
 	dir = 6
@@ -1687,6 +1700,14 @@
 /obj/structure/extinguisher_cabinet/directional/north,
 /obj/machinery/suit_storage_unit/engine,
 /turf/open/floor/mineral/titanium/tiled/yellow,
+/area/shuttle/voidcrew/scarab/engines/a)
+"WI" = (
+/obj/effect/spawner/structure/window/reinforced/plasma,
+/obj/machinery/atmospherics/pipe/smart/simple/dark/hidden/layer2{
+	dir = 4
+	},
+/obj/structure/cable,
+/turf/open/floor/plating,
 /area/shuttle/voidcrew/scarab/engines/a)
 "WW" = (
 /obj/item/radio/intercom/directional/west,
@@ -1787,6 +1808,12 @@
 "YV" = (
 /turf/closed/wall/mineral/titanium,
 /area/shuttle/voidcrew/scarab/cmos_office/a)
+"Zw" = (
+/obj/machinery/porta_turret/ship_defense{
+	dir = 1
+	},
+/turf/closed/wall/mineral/titanium,
+/area/shuttle/voidcrew/scarab/engines/a)
 "ZH" = (
 /obj/effect/turf_decal/stripes/line{
 	dir = 4
@@ -1852,7 +1879,7 @@ pz
 lw
 xe
 xe
-lw
+wH
 pz
 "}
 (3,1,1) = {"
@@ -1945,7 +1972,7 @@ pz
 "}
 (7,1,1) = {"
 pz
-ai
+Zw
 XO
 co
 lw
@@ -1974,14 +2001,14 @@ lw
 Eo
 Eo
 Eo
-Eo
+tV
 lw
 kq
 lw
 lw
-Hl
+Qa
 lw
-Mz
+WI
 lw
 lw
 lw
@@ -2021,7 +2048,7 @@ Eo
 Eo
 sb
 qm
-rw
+CQ
 eW
 eW
 eW
@@ -2065,7 +2092,7 @@ Eo
 Eo
 eH
 ps
-SE
+SY
 eW
 eW
 eW
@@ -2153,7 +2180,7 @@ Iz
 Iz
 Iz
 Iz
-LG
+Uh
 eW
 eW
 eW
@@ -2173,7 +2200,7 @@ pF
 SO
 Iz
 Iz
-Iz
+Uc
 Iz
 xO
 xO
@@ -2369,7 +2396,7 @@ NN
 ra
 sn
 mP
-Lc
+Wh
 aV
 Nq
 BC
@@ -2391,10 +2418,10 @@ ml
 cj
 Mc
 mP
-oT
+hT
 fA
 Cb
-Cb
+fJ
 fA
 zC
 kS
@@ -2416,8 +2443,8 @@ AH
 XS
 cs
 CO
-Hx
-LT
+Bw
+fm
 rQ
 kS
 Ow
@@ -2496,7 +2523,7 @@ pz
 (32,1,1) = {"
 pz
 pz
-mP
+NV
 MW
 od
 mP

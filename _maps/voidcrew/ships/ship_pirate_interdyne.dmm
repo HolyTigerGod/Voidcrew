@@ -42,7 +42,7 @@
 	requires_power = 0
 	})
 "ae" = (
-/obj/machinery/shuttle_scrambler,
+/obj/machinery/shuttle_scrambler/ship_siphon,
 /turf/open/floor/iron/dark,
 /area/shuttle/voidcrew/pirate_interdyne{
 	requires_power = 0
@@ -265,7 +265,6 @@
 	})
 "aK" = (
 /obj/machinery/door/airlock/external/glass/ruin{
-	cyclelinkeddir = 666666;
 	id_tag = "pirateportexternal";
 	req_access = null
 	},
@@ -286,7 +285,6 @@
 	})
 "aL" = (
 /obj/machinery/door/airlock/external/glass/ruin{
-	cyclelinkeddir = 666666;
 	id_tag = "pirateportexternal";
 	req_access = null
 	},

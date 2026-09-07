@@ -31,7 +31,9 @@
 		return INITIALIZE_HINT_LATELOAD
 
 /obj/docking_port/stationary/LateInitialize()
-	INVOKE_ASYNC(SSshuttle, TYPE_PROC_REF(/datum/controller/subsystem/shuttle, setup_shuttles), list(src))
+	// Ports late-initialize independently. The subsystem skips ports without a template
+	// and action_load() serializes every real load across its yielding operations.
+	INVOKE_ASYNC(SSshuttle, TYPE_PROC_REF(/datum/controller/subsystem/shuttle, setup_shuttle_late), src)
 
 #ifdef TESTING
 	highlight("#f00")

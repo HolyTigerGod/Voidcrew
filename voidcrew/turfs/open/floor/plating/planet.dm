@@ -50,12 +50,15 @@
 	light_power = 0.8
 	light_color = LIGHT_COLOR_BLUEGREEN
 /turf/open/misc/dirt/old
+	icon = 'voidcrew/icons/turf/legacy_ruin_floors.dmi'
 	icon_state = "oldsmoothdirt"
+	base_icon_state = "oldsmoothdirt"
 /turf/open/misc/dirt/old/lit
 	light_power = 1
 	light_range = 2
 /turf/open/misc/dirt/old/dark
 	icon_state =  "oldsmoothdarkdirt"
+	base_icon_state = "oldsmoothdarkdirt"
 /turf/open/misc/dirt/old/dark/lit
 	light_power = 1
 	light_range = 2
@@ -64,6 +67,10 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "dirt"
 	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	// Wasteland ground is planetary so the planet self-heals: without it, every storm,
+	// explosion or gas release ripples across the whole z-level's turfs for tens of
+	// minutes (observed as 16k+ active turfs), because nothing purges the disturbance.
+	planetary_atmos = TRUE
 	baseturfs = /turf/open/misc/dirt/dry
 
 /turf/open/misc/dirt/dry/lit
@@ -78,7 +85,9 @@
 	icon_state = "grass"
 	base_icon_state = "grass"
 	planetary_atmos = TRUE
-	icon = 'voidcrew/icons/turf/floors/lava_grass_red.dmi'
+	// icon stays the stock floors.dmi (which has the plain "grass" state); the
+	// coloured sheets are smoothing-only ("grass-0".."grass-255") and get swapped
+	// in by /turf/open/misc/grass/Initialize().
 	smooth_icon = 'voidcrew/icons/turf/floors/lava_grass_red.dmi'
 	// light_power = 1
 	// light_range = 2
@@ -86,12 +95,10 @@
 
 /turf/open/misc/grass/lava/orange
 	baseturfs = /turf/open/misc/grass/lava/orange
-	icon = 'voidcrew/icons/turf/floors/lava_grass_orange.dmi'
 	smooth_icon = 'voidcrew/icons/turf/floors/lava_grass_orange.dmi'
 
 /turf/open/misc/grass/lava/purple
 	baseturfs = /turf/open/misc/grass/lava/purple
-	icon = 'voidcrew/icons/turf/floors/lava_grass_purple.dmi'
 	smooth_icon = 'voidcrew/icons/turf/floors/lava_grass_purple.dmi'
 
 /turf/open/misc/wasteland
@@ -100,6 +107,8 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "wasteland1"
 	base_icon_state = "wasteland"
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	planetary_atmos = TRUE // see /turf/open/misc/dirt/dry
 	baseturfs = /turf/open/misc/wasteland
 	footstep = FOOTSTEP_SAND
 	barefootstep = FOOTSTEP_SAND
@@ -121,6 +130,8 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "rubblefull"
 	base_icon_state = "rubble"
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	planetary_atmos = TRUE // see /turf/open/misc/dirt/dry
 	baseturfs = /turf/open/floor/plating/rubble
 	footstep = FOOTSTEP_FLOOR
 	barefootstep = FOOTSTEP_HARD_BAREFOOT
@@ -138,6 +149,8 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "tunnelintact"
 	base_icon_state = "tunnel"
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	planetary_atmos = TRUE // see /turf/open/misc/dirt/dry
 	baseturfs = /turf/open/floor/plating/tunnel
 	footstep = FOOTSTEP_FLOOR
 	barefootstep = FOOTSTEP_HARD_BAREFOOT
@@ -155,6 +168,8 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "stone_old"
 	base_icon_state = "stone"
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	planetary_atmos = TRUE // see /turf/open/misc/dirt/dry
 	baseturfs = /turf/open/floor/plating/mossy_stone
 	footstep = FOOTSTEP_FLOOR
 	barefootstep = FOOTSTEP_HARD_BAREFOOT
@@ -172,6 +187,8 @@
 	icon = 'voidcrew/icons/turf/wasteland.dmi'
 	icon_state = "dust1"
 	base_icon_state = "dust"
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+	planetary_atmos = TRUE // see /turf/open/misc/dirt/dry
 	baseturfs = /turf/open/misc/dust
 	footstep = FOOTSTEP_SAND
 	barefootstep = FOOTSTEP_SAND
@@ -186,3 +203,29 @@
 /turf/open/misc/dust/lit
 	light_power = 1
 	light_range = 2
+
+// Planet-specific ruin floors. These retain their parent turf's appearance while
+// matching the generated planet bucket at exposed ruin boundaries.
+/turf/open/floor/iron/dark/lavaland
+	initial_gas_mix = LAVALAND_DEFAULT_ATMOS
+
+/turf/open/misc/dirt/old/lit/wasteland
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+
+/turf/open/misc/dirt/old/dark/lit/wasteland
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+
+/turf/open/indestructible/hierophant/wasteland
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+
+/turf/open/indestructible/hierophant/two/wasteland
+	initial_gas_mix = OPENTURF_DEFAULT_ATMOS
+
+/turf/open/floor/bronze/reebe
+	initial_gas_mix = REEBE_DEFAULT_ATMOS
+
+/turf/open/floor/engine/reebe
+	initial_gas_mix = REEBE_DEFAULT_ATMOS
+
+/turf/open/indestructible/boss/reebe
+	initial_gas_mix = REEBE_DEFAULT_ATMOS

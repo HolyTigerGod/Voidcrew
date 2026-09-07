@@ -26,17 +26,23 @@ SUBSYSTEM_DEF(missions)
 	return SS_INIT_SUCCESS
 
 /datum/controller/subsystem/missions/fire(resumed)
-	// Check for mission timeouts (handled by individual mission timers, but we can do cleanup here)
-	for(var/datum/mission/mission as anything in all_active_missions)
-		if(QDELETED(mission))
-			all_active_missions -= mission
-			continue
+	// Backstop sweep only - /datum/mission/Destroy() takes itself out of this list now, so
+	// reaching here means something was deleted without running Destroy at all. Walked
+	// backwards because removing from a list mid-iteration shifts every later element down
+	// one and the forward form silently skipped the entry after each removal.
+	for(var/i in length(all_active_missions) to 1 step -1)
+		if(QDELETED(all_active_missions[i]))
+			all_active_missions.Cut(i, i + 1)
 
-	// Refresh available missions for all ships
+	// Refresh available missions for all ships. CHECK_TICK between hulls: this is a
+	// SS_BACKGROUND subsystem on a 30 s period with a dozen-plus hulls to visit, and
+	// nothing in here is resumable, so without a yield point one fire runs the whole
+	// fleet inside a single tick and overruns its allocation on every fire.
 	for(var/obj/structure/overmap/ship/ship as anything in SSovermap.simulated_ships)
 		if(QDELETED(ship))
 			continue
 		refresh_ship_missions(ship)
+		CHECK_TICK
 
 /**
  * Fills a ship's available missions list up to the default count.
@@ -45,28 +51,54 @@ SUBSYSTEM_DEF(missions)
 /datum/controller/subsystem/missions/proc/refresh_ship_missions(obj/structure/overmap/ship/ship)
 	if(!ship)
 		return
+	// NPC ships never read their board; don't generate (and churn ruin refs) for them
+	if(istype(ship, /obj/structure/overmap/ship/npc))
+		return
 
-	// Remove any null/deleted missions from available list
+	// Remove deleted missions and rotate out offers that sat unaccepted too long
 	for(var/datum/mission/mission as anything in ship.available_missions)
 		if(QDELETED(mission))
 			ship.available_missions -= mission
+			continue
+		if(world.time - mission.posted_at > MISSION_BOARD_EXPIRY)
+			ship.available_missions -= mission
+			qdel(mission)
 
+	// Reserve one of the existing slots before rolling the rest of the board.
+	ensure_safe_exploration_offer(ship)
 	// Fill up to default count
 	var/missions_needed = DEFAULT_AVAILABLE_MISSIONS - length(ship.available_missions)
+	// Asked once and reused: the lookup walks the hull for an R&D server the
+	// first time it misses, and five offers is five walks.
+	var/unarmed = !ship.has_ship_combat_research()
 	for(var/i in 1 to missions_needed)
-		var/datum/mission/new_mission = generate_random_mission()
+		var/datum/mission/new_mission = generate_random_mission(roll_offer_zone_preference(unarmed))
 		if(new_mission)
 			ship.available_missions += new_mission
 
 /**
+ * The zone band the next offer should prefer, rolled per offer.
+ *
+ * A ship with no Shuttle Warfare Systems research has nothing to fight or tank
+ * with, so most of its board points at Neutral space. Rolled per offer rather
+ * than per board so the five slots come out mixed - see
+ * MISSION_UNARMED_GREEN_BIAS_PROB for why it isn't all five.
+ */
+/datum/controller/subsystem/missions/proc/roll_offer_zone_preference(unarmed)
+	if(!unarmed)
+		return null
+	return prob(MISSION_UNARMED_GREEN_BIAS_PROB) ? ZONE_GREEN : null
+
+/**
  * Generates a random mission based on weighted selection.
  * Returns a new mission datum, or null if none available.
+ * * preferred_zone - ZONE_* band the offer should aim at where it can, or null
  */
-/datum/controller/subsystem/missions/proc/generate_random_mission()
+/datum/controller/subsystem/missions/proc/generate_random_mission(preferred_zone)
 	var/mission_type = get_weighted_mission_type()
 	if(!mission_type)
 		return null
-	return create_mission(mission_type)
+	return create_mission(mission_type, preferred_zone)
 
 /**
  * Selects a random mission type based on weight.
@@ -102,10 +134,15 @@ SUBSYSTEM_DEF(missions)
  * Creates a new mission of the specified type.
  * * mission_type - The type path of the mission to create
  */
-/datum/controller/subsystem/missions/proc/create_mission(mission_type)
+/datum/controller/subsystem/missions/proc/create_mission(mission_type, preferred_zone)
 	if(!mission_type)
 		return null
-	return new mission_type()
+	var/datum/mission/mission = new mission_type(null, preferred_zone)
+	// Some mission types (e.g. recovery) can fail generation if no valid target exists
+	if(mission.generation_failed)
+		qdel(mission)
+		return null
+	return mission
 
 /**
  * Force-generates new available missions for a specific ship.
@@ -113,7 +150,7 @@ SUBSYSTEM_DEF(missions)
  * * ship - The ship to regenerate missions for
  */
 /datum/controller/subsystem/missions/proc/force_refresh_ship_missions(obj/structure/overmap/ship/ship)
-	if(!ship)
+	if(!ship || istype(ship, /obj/structure/overmap/ship/npc))
 		return
 
 	// Delete existing available missions
@@ -122,11 +159,27 @@ SUBSYSTEM_DEF(missions)
 			qdel(mission)
 	ship.available_missions = list()
 
-	// Generate new missions
-	for(var/i in 1 to DEFAULT_AVAILABLE_MISSIONS)
-		var/datum/mission/new_mission = generate_random_mission()
-		if(new_mission)
-			ship.available_missions += new_mission
+	refresh_ship_missions(ship)
+
+/// Retain or reserve one valid green travel job; never exceed the board's five slots.
+/datum/controller/subsystem/missions/proc/ensure_safe_exploration_offer(obj/structure/overmap/ship/ship)
+	for(var/datum/mission/exploration/offer in ship.available_missions)
+		if(!QDELETED(offer) && !offer.generation_failed && !offer.active && offer.target?.is_valid() && offer.target.get_zone_type() == ZONE_GREEN)
+			return TRUE
+	if(!mission_type_within_limit(/datum/mission/exploration))
+		return FALSE
+	var/datum/mission/exploration/safe_offer = create_mission(/datum/mission/exploration, ZONE_GREEN)
+	if(!safe_offer)
+		return FALSE // No valid green coordinates: retain the existing board.
+	if(!safe_offer.target?.is_valid() || safe_offer.target.get_zone_type() != ZONE_GREEN)
+		qdel(safe_offer)
+		return FALSE
+	if(length(ship.available_missions) >= DEFAULT_AVAILABLE_MISSIONS)
+		var/datum/mission/replaced = ship.available_missions[length(ship.available_missions)]
+		ship.available_missions -= replaced
+		qdel(replaced)
+	ship.available_missions += safe_offer
+	return TRUE
 
 /**
  * Gets the count of active missions of a specific type.

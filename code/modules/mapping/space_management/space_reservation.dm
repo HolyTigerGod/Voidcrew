@@ -1,5 +1,11 @@
 //Yes, they can only be rectangular.
 //Yes, I'm sorry.
+
+/// Above this many turfs, reservation teardown in Release() spreads itself over
+/// multiple ticks instead of running atomically. Small reservations keep the
+/// historical no-sleep behavior, so qdel() from tick-sensitive contexts stays safe.
+#define RESERVATION_RELEASE_YIELD_THRESHOLD 2500
+
 /datum/turf_reservation
 	/// All turfs that we've reserved
 	var/list/reserved_turfs = list()
@@ -38,19 +44,90 @@
 	turf_type = /turf/open/space/transit
 	pre_cordon_distance = 7
 
+/// Returns TRUE if the given turf falls inside this reservation's bounds.
+/// Cheap bounds check against the per-z corners rather than a search of
+/// reserved_turfs, which can run to thousands of entries.
+/datum/turf_reservation/proc/contains_turf(turf/checked)
+	if(isnull(checked))
+		return FALSE
+
+	for(var/z_idx in 1 to length(bottom_left_turfs))
+		var/turf/bottom_left = bottom_left_turfs[z_idx]
+		var/turf/top_right = top_right_turfs[z_idx]
+		if(checked.z != bottom_left.z)
+			continue
+
+		return (checked.x >= bottom_left.x && checked.x <= top_right.x) \
+			&& (checked.y >= bottom_left.y && checked.y <= top_right.y)
+
+	return FALSE
+
 /datum/turf_reservation/proc/Release()
+	// VOIDCREW EDIT: the release set is rebuilt from the corners we recorded at claim time
+	// instead of trusting `reserved_turfs` to still list everything _reserve_area() took.
+	//
+	// `reserved_turfs` is handed out BY REFERENCE: SSshuttle used to alias it straight into
+	// the transit area's turfs_by_zlevel (see generate_transit_dock), and the area
+	// bookkeeping mutates that list in place - SSarea_contents removes one entry per turf
+	// that left the area, and cannonize_contained_turfs_by_zlevel() Cut()s and refills it.
+	// So the list drifted into meaning "turfs currently sitting in that area", not "turfs we
+	// claimed". A shuttle in transit subtracts its footprint; if the reservation was
+	// released before that shuttle handed its turfs back (transit dock force-destroyed while
+	// something was docked, ship deleted in transit, jumpToNullSpace) those turfs were never
+	// taken out of SSmapping.used_turfs and never returned to unused_turfs. They stayed
+	// claimed and flagged for the rest of the round, and once enough of them piled up
+	// request_turf_block_reservation() could no longer fit a block and minted a fresh
+	// permanent 255x255 reservation z-level (~65k turfs, ~48 MB) instead.
+	//
+	// Measured on the 52-cycle churn soak as +152 used_turfs a cycle, monotonic, in steps
+	// that are hull footprints rather than any rectangle perimeter (101, 172, 262, 322, 323,
+	// 383, 399 - odd sizes, and never below SSarea_contents' 100 loose-turf cut threshold).
+	//
+	// The aliasing itself is fixed at its source in SSshuttle, but the corners are ours
+	// alone and cannot be reached by anyone else, so block() over them stays the
+	// authoritative answer to "what did we take" no matter who mutates our lists.
+	var/list/released = list()
+	for(var/z_idx in 1 to min(length(bottom_left_turfs), length(top_right_turfs)))
+		var/turf/bottom_left = bottom_left_turfs[z_idx]
+		var/turf/top_right = top_right_turfs[z_idx]
+		if(isnull(bottom_left) || isnull(top_right))
+			continue
+		for(var/turf/claimed as anything in block(bottom_left, top_right))
+			released[claimed] = TRUE
+	// `as anything` on both, so a hard delete that nulled an entry in place does not throw
+	// the loop - the nulls are dropped explicitly instead.
+	for(var/turf/claimed as anything in reserved_turfs)
+		if(!isnull(claimed))
+			released[claimed] = TRUE
+	for(var/turf/cordon_turf as anything in cordon_turfs)
+		if(!isnull(cordon_turf))
+			released[cordon_turf] = TRUE
+
 	bottom_left_turfs.Cut()
 	top_right_turfs.Cut()
-
-	var/list/reserved_copy = reserved_turfs.Copy()
-	SSmapping.used_turfs -= reserved_turfs
 	reserved_turfs = list()
-
-	var/list/cordon_copy = cordon_turfs.Copy()
-	SSmapping.used_turfs -= cordon_turfs
 	cordon_turfs = list()
 
-	var/release_turfs = reserved_copy + cordon_copy
+	if(!length(released))
+		return
+
+	// Keyed above rather than appended, so a turf listed twice (the aliased transit list
+	// appends a returning shuttle turf a second time) is only handed to the drain once -
+	// releasing it twice would double-add it to the space area's contents.
+	var/list/used = SSmapping.used_turfs
+	var/list/release_turfs = list()
+	for(var/turf/claimed as anything in released)
+		var/datum/turf_reservation/holder = used[claimed]
+		if(!isnull(holder) && holder != src && !QDELETED(holder))
+			continue // somebody live owns this ground now; it is theirs to hand back
+		used -= claimed
+		release_turfs += claimed
+
+	// Landable overmap encounters reserve >20k turfs - tearing those down atomically
+	// hard-freezes the server for seconds, so large releases yield. This is safe even
+	// from qdel(): our turf lists were already emptied above, so a reentrant Release()
+	// during a yield has nothing left to double-process.
+	var/can_yield = length(release_turfs) > RESERVATION_RELEASE_YIELD_THRESHOLD
 
 	for(var/turf/reserved_turf as anything in release_turfs)
 		SEND_SIGNAL(reserved_turf, COMSIG_TURF_RESERVATION_RELEASED, src)
@@ -58,6 +135,8 @@
 		// immediately disconnect from atmos
 		reserved_turf.blocks_air = TRUE
 		CALCULATE_ADJACENT_TURFS(reserved_turf, KILL_EXCITED)
+		if(can_yield)
+			CHECK_TICK
 
 	// Makes the linter happy, even tho we don't await this
 	INVOKE_ASYNC(SSmapping, TYPE_PROC_REF(/datum/controller/subsystem/mapping, reserve_turfs), release_turfs)
@@ -96,11 +175,13 @@
 		cordon_area.contents += cordon_turf
 
 		// Its no longer unused, but its also not "used"
+		// (not removed from SSmapping.unused_turfs - stale entries there are cheap,
+		// per-turf removal is not; see _reserve_area())
 		cordon_turf.turf_flags &= ~UNUSED_RESERVATION_TURF
 		cordon_turf.empty(/turf/cordon, /turf/cordon)
-		SSmapping.unused_turfs["[cordon_turf.z]"] -= cordon_turf
 		// still gets linked to us though
 		SSmapping.used_turfs[cordon_turf] = src
+		CHECK_TICK
 
 	//swap the area with the pre-cordoning area
 	for(var/turf/pre_cordon_turf as anything in pre_cordon_turfs)
@@ -164,6 +245,15 @@
 		BL = i
 		if(!(BL.turf_flags & UNUSED_RESERVATION_TURF))
 			continue
+		// VOIDCREW EDIT: only consider grid-aligned origins. Free-form first-fit fragments
+		// the level into slivers no later block fits (measured 9.4 hulls/level vs an ideal
+		// 12-16), and walks every candidate turf doing it. Alignment makes released holes
+		// reusable by the next same-class hull and rejects ~63/64 candidates in two modulos.
+		// Anchored at band origin + 1: a block's cordon ring needs the turf OUTSIDE it, so
+		// the first origin that can ever pass calculate_cordon_turfs() is one in from the
+		// band edge - anchoring there keeps the outermost usable column/row on the grid.
+		if((BL.x - SHUTTLE_TRANSIT_BORDER - 1) % RESERVATION_ORIGIN_STRIDE || (BL.y - SHUTTLE_TRANSIT_BORDER - 1) % RESERVATION_ORIGIN_STRIDE)
+			continue
 		if(BL.x + width > world.maxx || BL.y + height > world.maxy)
 			continue
 		TR = locate(BL.x + width - 1, BL.y + height - 1, BL.z)
@@ -185,16 +275,38 @@
 		break
 	if(!passing || !istype(BL) || !istype(TR))
 		return FALSE
-	for(var/i in final)
-		var/turf/T = i
-		reserved_turfs |= T
-		SSmapping.unused_turfs["[T.z]"] -= T
+
+	// Claim every validated turf (ours AND the cordon ring) BEFORE doing any expensive
+	// work: the empty() pass below yields via CHECK_TICK, and a turf left
+	// validated-but-unclaimed across a yield could be grabbed by a concurrent reserve().
+	// Claiming is pure flag/bookkeeping work, so this pass never sleeps.
+	// Claimed turfs are deliberately NOT removed from SSmapping.unused_turfs: per-turf
+	// removal from a list that size is a linear scan each (quadratic overall - seconds
+	// of hard freeze for big reservations). The reserve scan above already skips
+	// anything without UNUSED_RESERVATION_TURF, and the unused_turfs lists are assoc
+	// keyed by turf, so handing a turf back later just updates its existing key.
+	reserved_turfs += final
+	for(var/turf/T as anything in final)
 		SSmapping.used_turfs[T] = src
 		T.turf_flags = (T.turf_flags | RESERVATION_TURF) & ~UNUSED_RESERVATION_TURF
-		T.empty(turf_type, turf_type_is_baseturf ? turf_type : null)
+	for(var/turf/cordon_turf as anything in cordon_turfs)
+		cordon_turf.turf_flags &= ~UNUSED_RESERVATION_TURF
+		SSmapping.used_turfs[cordon_turf] = src
 
+	// Record the corners as part of claiming, not after the conversion below. The
+	// turfs are already flagged RESERVATION_TURF and pointed at us in used_turfs, so
+	// GET_TURF_ABOVE/BELOW route through this reservation from here on - and those
+	// read the corner lists. Publishing them after a pass that yields left a window
+	// where a turf claimed by us had no bounds to look up.
 	bottom_left_turfs += BL
 	top_right_turfs += TR
+
+	// The actual turf conversion is by far the expensive part (a full ChangeTurf per
+	// turf) - now that everything is claimed it can safely spread over multiple ticks
+	for(var/turf/T as anything in final)
+		T.empty(turf_type, turf_type_is_baseturf ? turf_type : null)
+		CHECK_TICK
+
 	return TRUE
 
 /datum/turf_reservation/proc/reserve(width, height, z_size, z_reservation)
@@ -214,7 +326,9 @@
 
 /// Calculates the effective bounds information for the given turf. Returns a list of the information, or null if not applicable.
 /datum/turf_reservation/proc/calculate_turf_bounds_information(turf/target)
-	for(var/z_idx in 1 to z_size)
+	// Bounded by the corner lists rather than z_size, same as contains_turf(): a
+	// half-built or already-released reservation still has its z_size set.
+	for(var/z_idx in 1 to length(bottom_left_turfs))
 		var/turf/bottom_left = bottom_left_turfs[z_idx]
 		var/turf/top_right = top_right_turfs[z_idx]
 		var/bl_x = bottom_left.x
@@ -249,7 +363,7 @@
 
 	var/z_idx = bounds_info["z_idx"]
 	// check what z level, if its the max, then there is no turf below
-	if(z_idx == z_size)
+	if(z_idx >= length(bottom_left_turfs))
 		return null
 
 	var/offset_x = bounds_info["offset_x"]
@@ -272,6 +386,8 @@
 	var/offset_y = bounds_info["offset_y"]
 	var/turf/bottom_left = bottom_left_turfs[z_idx - 1]
 	return locate(bottom_left.x + offset_x, bottom_left.y + offset_y, bottom_left.z)
+
+#undef RESERVATION_RELEASE_YIELD_THRESHOLD
 
 /datum/turf_reservation/New()
 	LAZYADD(SSmapping.turf_reservations, src)

@@ -1,5 +1,5 @@
 /datum/biome/grass
-	open_turf_types = list(/turf/open/misc/grass/lit = 1)
+	open_turf_types = list(/turf/open/misc/grass/planet = 1)
 	flora_spawn_list = list(
 		/obj/structure/flora/tree/jungle = 1,
 		/obj/structure/flora/ausbushes/brflowers = 1,
@@ -32,11 +32,17 @@
 		/mob/living/basic/deer/beach = 1
 	)
 	mob_spawn_chance = 1
+	// Meaner tier for dangerous-zone planets (see dangerous_mob_spawn_list)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/snake/beach = 2,
+		/mob/living/basic/bee/toxin = 1,
+		/mob/living/basic/slime/random/beach = 1,
+	)
 
 /datum/biome/grass/dense
 	flora_spawn_chance = 65
 	mob_spawn_list = list(
-		/mob/living/simple_animal/pet/cat/cak/beach = 1,
+		/mob/living/basic/pet/cat/cak/beach = 1,
 		/mob/living/basic/butterfly/beach = 4,
 		/mob/living/basic/snake/beach = 5,
 		/mob/living/basic/slime/random/beach = 3,
@@ -47,8 +53,11 @@
 	feature_spawn_list = list(/obj/structure/spawner/cave/beach = 1)
 
 /datum/biome/beach
-	open_turf_types = list(/turf/open/misc/asteroid/sand/beach/lit = 1)
-	//mob_spawn_list = list(/mob/living/simple_animal/crab/beach = 7, /mob/living/simple_animal/turtle/beach = 4, /mob/living/simple_animal/hostile/retaliate/gator/steppy = 1)
+	open_turf_types = list(/turf/open/misc/asteroid/sand/beach = 1)
+	mob_spawn_list = list(
+		/mob/living/basic/crab/beach = 7,
+		/mob/living/basic/turtle/beach = 4
+	)
 	mob_spawn_chance = 0.3
 	feature_spawn_chance = 3
 	feature_spawn_list = list(
@@ -67,7 +76,7 @@
 	flora_spawn_chance = 1
 
 /datum/biome/beach/dense
-	open_turf_types = list(/turf/open/misc/asteroid/sand/beach/dense/lit = 1)
+	open_turf_types = list(/turf/open/misc/asteroid/sand/beach/dense = 1)
 	flora_spawn_list = list(
 		/obj/structure/flora/rock/asteroid = 6,
 		/obj/structure/flora/rock/beach = 1
@@ -76,16 +85,17 @@
 
 /datum/biome/ocean
 	open_turf_types = list(/turf/open/water/beach = 1)
+	// Fish are caught with a rod (tg fishing is live on these turfs), not spawned as mobs.
 	mob_spawn_list = list(
-		/mob/living/simple_animal/beachcarp = 1,
 		/mob/living/basic/carp/beach = 1,
-		/mob/living/basic/carp/beach/small = 1,
-		/mob/living/simple_animal/beachcarp/bass = 1,
-		/mob/living/simple_animal/beachcarp/trout = 1,
-		/mob/living/simple_animal/beachcarp/salmon = 1,
-		/mob/living/simple_animal/beachcarp/perch = 1
+		/mob/living/basic/carp/beach/small = 2
 	)
-	mob_spawn_chance = 1.4
+	mob_spawn_chance = 0.4
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/carp/beach = 3,
+		/mob/living/basic/carp/mega/beach = 1,
+		/mob/living/basic/trooper/pirate/melee/beach/boat = 1,
+	)
 	flora_spawn_list = list(
 		/obj/structure/flora/rock/beach = 1,
 		/obj/structure/flora/rock/pile = 1
@@ -96,20 +106,21 @@
 
 /datum/biome/ocean/deep
 	open_turf_types = list(/turf/open/water/beach/deep = 1)
-	mob_spawn_chance = 1.4
+	mob_spawn_chance = 0.6
 	mob_spawn_list = list(
 		/mob/living/basic/carp/beach = 6,
 		/mob/living/basic/carp/beach/small = 5,
-		/mob/living/simple_animal/beachcarp/bass = 5,
-		/mob/living/simple_animal/beachcarp/trout = 5,
-		/mob/living/simple_animal/beachcarp/salmon = 5,
-		/mob/living/simple_animal/beachcarp/perch = 5,
+		/mob/living/basic/carp/mega/beach = 2,
 		/mob/living/basic/trooper/pirate/melee/beach/boat = 3,
 		/mob/living/basic/trooper/pirate/ranged/beach/boat = 1
 	)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/carp/mega/beach = 2,
+		/mob/living/basic/trooper/pirate/ranged/beach/boat = 1,
+	)
 	feature_spawn_chance = 0.1
 	feature_spawn_list = list(
-//		/obj/structure/spawner/sea_crystal = 1
+		/obj/structure/spawner/sea_crystal = 1
 	)
 
 /datum/biome/cave/beach
@@ -120,8 +131,9 @@
 	mob_spawn_chance = 1
 	mob_spawn_list = list(
 		/mob/living/basic/bear/cave = 5,
-		/mob/living/simple_animal/hostile/killertomato/beach = 1,
-		/mob/living/simple_animal/hostile/mushroom/beach = 1
+		/mob/living/basic/killer_tomato/beach = 1,
+		/mob/living/basic/mushroom/beach = 1,
+		/mob/living/basic/mining/hivelord/beach = 1
 	)
 
 /datum/biome/cave/beach/cove

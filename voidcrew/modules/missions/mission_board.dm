@@ -5,7 +5,6 @@
  * - View available and active missions
  * - Accept new missions
  * - Turn in completed missions
- * - Captain can adjust crew share percentage
  */
 /obj/machinery/computer/mission_board
 	name = "mission board"
@@ -57,6 +56,66 @@
 /obj/machinery/computer/mission_board/proc/get_ship()
 	return get_ship_from_atom(src)
 
+/**
+ * Tapping a handheld GPS on the console uploads the active missions' objective
+ * beacons to that specific unit.
+ *
+ * A contract can be linked and still have nothing to point at: the beacon tracks
+ * the objective's physical mark, and field objectives don't place theirs until
+ * the site's interior loads. Reporting the link as an upload in that state reads
+ * as a broken GPS, so the three cases are called apart - signals on the unit, a
+ * link with no mark out there yet, and nothing linked at all.
+ */
+/obj/machinery/computer/mission_board/item_interaction(mob/living/user, obj/item/tool, list/modifiers)
+	var/datum/component/gps/item/gps_unit = tool.GetComponent(/datum/component/gps/item)
+	if(!gps_unit)
+		return ..()
+	return upload_mission_beacons(user, gps_unit)
+
+/// Resolve only a GPS actually installed in this user's currently worn MODsuit.
+/obj/machinery/computer/mission_board/proc/get_worn_mod_gps(mob/user)
+	var/obj/item/mod/control/suit = user?.get_item_by_slot(ITEM_SLOT_BACK)
+	if(!istype(suit) || QDELETED(suit) || suit.wearer != user)
+		return null
+	for(var/obj/item/mod/module/gps/module in suit.modules)
+		if(!QDELETED(module) && module.mod == suit && module.loc == suit)
+			return module.GetComponent(/datum/component/gps/item)
+	return null
+
+/// The UI resolves the worn module on every click, so dropped or removed suits cannot be targeted.
+/obj/machinery/computer/mission_board/proc/link_worn_mod_gps(mob/user)
+	if(!is_operational || !user.can_perform_action(src, FORBID_TELEKINESIS_REACH))
+		return FALSE
+	var/datum/component/gps/item/gps_unit = get_worn_mod_gps(user)
+	if(!gps_unit)
+		balloon_alert(user, "no worn MOD GPS!")
+		return FALSE
+	return upload_mission_beacons(user, gps_unit) == ITEM_INTERACT_SUCCESS
+
+/// Both handheld units and worn MOD modules use the same mission registration and feedback.
+/obj/machinery/computer/mission_board/proc/upload_mission_beacons(mob/user, datum/component/gps/item/gps_unit)
+	var/obj/structure/overmap/ship/ship = get_ship()
+	if(!ship)
+		balloon_alert(user, "console not on a ship!")
+		return ITEM_INTERACT_BLOCKING
+
+	var/linked = 0
+	for(var/datum/mission/mission as anything in ship.active_missions)
+		if(QDELETED(mission))
+			continue
+		if(mission.link_gps_unit(gps_unit))
+			linked++
+
+	var/live_beacons = LAZYLEN(gps_unit.linked_mission_signals)
+	if(live_beacons)
+		balloon_alert(user, "[live_beacons] beacon[live_beacons > 1 ? "s" : ""] linked")
+		playsound(src, 'sound/machines/ding.ogg', 50, TRUE)
+	else if(linked)
+		balloon_alert(user, "linked - no objective marked yet")
+	else
+		balloon_alert(user, "no beacons to upload!")
+	return ITEM_INTERACT_SUCCESS
+
 /obj/machinery/computer/mission_board/ui_interact(mob/user, datum/tgui/ui)
 	. = ..()
 	ui = SStgui.try_update_ui(user, src, ui)
@@ -75,6 +134,8 @@
 	data["max_missions"] = ship.max_missions
 	data["active_count"] = length(ship.active_missions)
 	data["has_pad"] = !!linked_pad
+	data["has_mod_gps"] = !!get_worn_mod_gps(user)
+	data["refresh_cooldown_remaining"] = max(0, round((MISSION_REFRESH_COOLDOWN - (world.time - ship.last_mission_refresh)) / 10))
 
 	// Available missions
 	data["available_missions"] = list()
@@ -109,6 +170,17 @@
 	data["has_claimed_player_bounty"] = SSbounty?.ship_has_claimed_player_bounty(ship) || FALSE
 	data["ship_balance"] = ship.ship_account?.account_balance || 0
 
+	// Live player-outpost advertisements (see voidcrew/modules/player_outposts/outpost_adverts.dm)
+	data["outpost_adverts"] = list()
+	for(var/datum/outpost_advert/advert as anything in GLOB.outpost_adverts)
+		data["outpost_adverts"] += list(list(
+			"name" = advert.outpost_name,
+			"blurb" = advert.blurb,
+			"x" = advert.coord_x,
+			"y" = advert.coord_y,
+			"remaining_minutes" = CEILING(advert.get_remaining_seconds() / 60, 1),
+		))
+
 	return data
 
 /obj/machinery/computer/mission_board/ui_act(action, params, datum/tgui/ui)
@@ -122,6 +194,10 @@
 		return TRUE
 
 	switch(action)
+		if("link_mod_gps")
+			link_worn_mod_gps(ui.user)
+			return TRUE
+
 		if("accept")
 			var/datum/mission/mission = locate(params["ref"]) in ship.available_missions
 			if(!mission)
@@ -143,38 +219,28 @@
 				balloon_alert(usr, "mission not found!")
 				return TRUE
 
-			// Check for item on pad if mission requires it
+			// Search the live pad contents using this contract's objective. The
+			// first item on the pad may be unrelated or fall short of the ask.
 			var/obj/item/turn_in_item = null
-			if(linked_pad && params["item_ref"])
-				// Locate the item by ref, then verify it's actually on the pad's turf
-				var/obj/item/found_item = locate(params["item_ref"])
-				if(found_item && found_item.loc == linked_pad.loc)
-					turn_in_item = found_item
+			if(linked_pad && mission.requires_item)
+				turn_in_item = mission.pick_turn_in_item(linked_pad.get_items_on_pad())
 
 			var/result = ship.complete_mission(mission, linked_pad, turn_in_item)
 			if(result != TRUE)
 				balloon_alert(usr, result)
 				playsound(src, 'sound/machines/buzz/buzz-sigh.ogg', 50, TRUE)
 			else
-				balloon_alert(usr, "mission completed!")
+				// Counted hand-overs accept the item but keep the mission open
+				balloon_alert(usr, QDELETED(mission) ? "mission completed!" : "turn-in accepted!")
 				playsound(src, 'sound/machines/ding.ogg', 50, TRUE)
 			return TRUE
 
-		if("abandon")
-			var/datum/mission/mission = locate(params["ref"]) in ship.active_missions
-			if(!mission)
-				balloon_alert(usr, "mission not found!")
-				return TRUE
-
-			var/result = ship.abandon_mission(mission)
-			if(result != TRUE)
-				balloon_alert(usr, result)
-			else
-				balloon_alert(usr, "mission abandoned")
-			return TRUE
-
 		if("refresh")
-			// Force refresh available missions
+			var/cooldown_remaining = MISSION_REFRESH_COOLDOWN - (world.time - ship.last_mission_refresh)
+			if(cooldown_remaining > 0)
+				balloon_alert(usr, "wait [round(cooldown_remaining / 10)]s")
+				return TRUE
+			ship.last_mission_refresh = world.time
 			SSmissions.force_refresh_ship_missions(ship)
 			balloon_alert(usr, "missions refreshed!")
 			return TRUE
@@ -228,7 +294,11 @@
 				return TRUE
 
 			if(bounty.has_tracking(ship))
-				balloon_alert(usr, "already tracking!")
+				// Already paid - just re-chart the helm waypoint (free), in case it was cleared
+				if(bounty.push_tracking_waypoint(ship))
+					balloon_alert(usr, "waypoint re-charted!")
+				else
+					balloon_alert(usr, "already tracking!")
 				return TRUE
 
 			if(bounty.enable_tracking(ship))
@@ -294,6 +364,12 @@
 			var/reward_amount = text2num(params["reward"])
 			if(!reward_amount || reward_amount < 100)
 				balloon_alert(usr, "minimum reward is 100 cr!")
+				return TRUE
+
+			// Escrowing the balance into a bounty and cancelling it later parks money out
+			// of a pirate's reach, so a frozen account can't post one.
+			if(ship.ship_account?.is_siphon_locked())
+				balloon_alert(usr, "accounts locked - intrusion!")
 				return TRUE
 
 			if(ship.ship_account?.account_balance < reward_amount)

@@ -1,4 +1,8 @@
 //MAP CONVERTED BY dmm2tgm.py THIS HEADER COMMENT PREVENTS RECONVERSION, DO NOT REMOVE
+"b" = (
+/obj/effect/zone_mobs/undead,
+/turf/open/floor/plating,
+/area/ruin/unpowered)
 "d" = (
 /turf/closed/wall/rust,
 /area/ruin/unpowered)
@@ -20,8 +24,9 @@
 	icon_state = "mirror_broke";
 	pixel_x = 28
 	},
+/obj/structure/closet/crate/zone_loot/occult,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "g" = (
@@ -52,7 +57,7 @@
 	icon_state = "mirror_broke";
 	pixel_y = 28
 	},
-/obj/item/kitchen/knife/envy,
+/obj/item/knife/envy,
 /turf/open/floor/plating,
 /area/ruin/unpowered)
 "l" = (
@@ -75,7 +80,7 @@
 /area/ruin/unpowered)
 "n" = (
 /turf/open/floor/plating{
-	icon_state = "platingdmg2"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "o" = (
@@ -86,7 +91,7 @@
 	pixel_x = -28
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "p" = (
@@ -228,7 +233,7 @@ k
 i
 i
 i
-i
+b
 i
 i
 i

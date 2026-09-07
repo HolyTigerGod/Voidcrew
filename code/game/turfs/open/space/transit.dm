@@ -36,6 +36,25 @@
 /turf/open/space/transit/proc/initialize_drifting(atom/entered, atom/movable/enterer)
 	SIGNAL_HANDLER
 
+	// The async initialization callback can outlive the move or turf replacement.
+	if(QDELETED(enterer) || enterer.loc != src || !istype(src, /turf/open/space/transit))
+		return
+
+	// VOIDCREW EDIT ADDITION START - the hull grace zone. Close in against a ship, hyperspace
+	// does not take hold. The tiles are still vacuum and you still get around by pushing off
+	// the hull; all the grace buys is not being dragged off the instant you step out of an
+	// airlock in flight. See voidcrew/edits/hyperspace_overboard.dm. Deliberately ahead of the
+	// TRAIT_HYPERSPACED check below, so somebody hyperspace ALREADY has hold of gets caught
+	// when they drift back into a hull's lee. Living mobs only, and never anything holding
+	// a hyperspace exemption - confined ship debris is meant to keep flying (ship_debris.dm).
+	if(isliving(enterer) && !HAS_TRAIT(enterer, TRAIT_FREE_HYPERSPACE_MOVEMENT))
+		var/obj/docking_port/mobile/holding = hyperspace_hull_near(src)
+		if(holding)
+			if(!enterer.GetComponent(/datum/component/hyperspace_hull_grip))
+				enterer.AddComponent(/datum/component/hyperspace_hull_grip, holding)
+			return
+	// VOIDCREW EDIT ADDITION END
+
 	if(enterer && !HAS_TRAIT(enterer, TRAIT_HYPERSPACED) && !HAS_TRAIT(src, TRAIT_HYPERSPACE_STOPPED))
 		enterer.AddComponent(/datum/component/shuttle_cling, REVERSE_DIR(dir))
 
@@ -49,7 +68,8 @@
 	. = ..()
 
 	var/turf/location = gone.loc
-	if(istype(location, /turf/open/space) && !istype(location, src.type))//they got forced out of transit area into default space tiles
+	// VOIDCREW: crossing into a normal-space breach respects the same exemption as the soft cordon.
+	if(istype(location, /turf/open/space) && !istype(location, src.type) && !HAS_TRAIT(gone, TRAIT_FREE_HYPERSPACE_SOFTCORDON_MOVEMENT))
 		dump_in_space(gone) //launch them into game space, away from transitspace
 
 ///Get rid of all our contents, called when our reservation is released (which in our case means the shuttle arrived)
@@ -64,6 +84,16 @@
 	if(HAS_TRAIT(dumpee, TRAIT_DEL_ON_SPACE_DUMP))
 		qdel(dumpee)
 		return
+
+	// VOIDCREW EDIT ADDITION START - land them somewhere that exists. The CROSSLINKED levels
+	// the throw below picks from are this fork's unused "Ruin Area"/"Empty Area" z-levels:
+	// uninitialised space from corner to corner, no gravity and nothing to push off, which
+	// makes landing on one a permanent softlock. See voidcrew/edits/hyperspace_overboard.dm.
+	// Falls through to upstream only when the round has no loaded site and no other ship
+	// anywhere, which outside of unit tests it never does.
+	if(voidcrew_dump_in_space(dumpee))
+		return
+	// VOIDCREW EDIT ADDITION END
 
 	var/max = world.maxx-TRANSITIONEDGE
 	var/min = 1+TRANSITIONEDGE

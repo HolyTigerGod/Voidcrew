@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import {
   Box,
@@ -20,12 +20,19 @@ import type { BooleanLike } from 'tgui-core/react';
 import { useBackend } from '../backend';
 import { Window } from '../layouts';
 
+type RewardItem = {
+  name: string;
+  icon: string | null;
+  rare: BooleanLike;
+};
+
 type Mission = {
   ref: string;
   name: string;
   desc: string;
   author: string;
   value: number;
+  reward_items?: RewardItem[];
   reward_item: string | null;
   reward_item_icon: string | null;
   duration: number;
@@ -35,12 +42,16 @@ type Mission = {
   can_complete: BooleanLike;
   active: BooleanLike;
   requires_item?: BooleanLike;
+  voucher_count?: number;
+  research_reward?: number;
   target_x?: number;
   target_y?: number;
   visited?: BooleanLike;
   difficulty: number;
   difficulty_name: string;
   difficulty_color: string;
+  zone_name: string | null;
+  zone_color: string;
 };
 
 type PadItem = {
@@ -92,6 +103,7 @@ type Data = {
   max_missions: number;
   active_count: number;
   has_pad: BooleanLike;
+  has_mod_gps: BooleanLike;
   available_missions: Mission[];
   active_missions: Mission[];
   pad_contents: PadItem[];
@@ -101,6 +113,16 @@ type Data = {
   has_created_bounty: BooleanLike;
   has_claimed_player_bounty: BooleanLike;
   ship_balance: number;
+  refresh_cooldown_remaining: number;
+  outpost_adverts: OutpostAdvert[];
+};
+
+type OutpostAdvert = {
+  name: string;
+  blurb: string;
+  x: number;
+  y: number;
+  remaining_minutes: number;
 };
 
 export const MissionBoard = () => {
@@ -126,6 +148,7 @@ const MissionBoardContent = () => {
     max_missions,
     active_count,
     has_pad,
+    has_mod_gps,
     available_missions,
     active_missions,
     pad_contents,
@@ -135,10 +158,12 @@ const MissionBoardContent = () => {
     has_created_bounty,
     has_claimed_player_bounty,
     ship_balance,
+    refresh_cooldown_remaining,
+    outpost_adverts = [],
   } = data;
 
   const [currentTab, setCurrentTab] = useState<
-    'available' | 'active' | 'bounties'
+    'available' | 'active' | 'bounties' | 'broadcasts'
   >('available');
 
   const huntingCount = bounties.filter((b) => b.is_hunting).length;
@@ -150,8 +175,14 @@ const MissionBoardContent = () => {
         <Section
           title="Mission Control"
           buttons={
-            <Button icon="sync" onClick={() => act('refresh')}>
-              Refresh
+            <Button
+              icon="sync"
+              disabled={refresh_cooldown_remaining > 0}
+              onClick={() => act('refresh')}
+            >
+              {refresh_cooldown_remaining > 0
+                ? `Refresh (${refresh_cooldown_remaining}s)`
+                : 'Refresh'}
             </Button>
           }
         >
@@ -164,12 +195,26 @@ const MissionBoardContent = () => {
                 {has_pad ? 'Connected' : 'Not Found'}
               </Box>
             </LabeledList.Item>
+            <LabeledList.Item label="MOD GPS">
+              <Button
+                icon="location-dot"
+                disabled={!has_mod_gps}
+                tooltip={
+                  has_mod_gps
+                    ? 'Upload active mission beacons to your worn MODsuit GPS.'
+                    : 'Wear a MODsuit with an installed GPS module to link it here.'
+                }
+                onClick={() => act('link_mod_gps')}
+              >
+                Link Mission Beacons
+              </Button>
+            </LabeledList.Item>
           </LabeledList>
         </Section>
       </Stack.Item>
 
       {/* Pad contents if any - only show on active tab */}
-      {currentTab === 'active' && has_pad && pad_contents.length > 0 && (
+      {currentTab === 'active' && !!has_pad && pad_contents.length > 0 && (
         <Stack.Item>
           <Section title="Items on Pad">
             {pad_contents.map((item) => (
@@ -202,6 +247,13 @@ const MissionBoardContent = () => {
             icon="skull"
           >
             Bounties ({huntingCount}/{bounties.length})
+          </Tabs.Tab>
+          <Tabs.Tab
+            selected={currentTab === 'broadcasts'}
+            onClick={() => setCurrentTab('broadcasts')}
+            icon="satellite-dish"
+          >
+            Broadcasts ({outpost_adverts.length})
           </Tabs.Tab>
         </Tabs>
       </Stack.Item>
@@ -309,6 +361,42 @@ const MissionBoardContent = () => {
             </Section>
           </Section>
         )}
+
+        {currentTab === 'broadcasts' && (
+          <Section fill scrollable title="Outpost Broadcasts">
+            {outpost_adverts.length === 0 ? (
+              <NoticeBox>
+                No outposts are broadcasting right now. Player-founded outposts
+                can buy galaxy-wide listings from their management console.
+              </NoticeBox>
+            ) : (
+              <Stack vertical>
+                {outpost_adverts.map((advert) => (
+                  <Stack.Item key={`${advert.name}-${advert.x}-${advert.y}`}>
+                    <Section>
+                      <Stack align="center">
+                        <Stack.Item grow>
+                          <Box bold>{advert.name}</Box>
+                          <Box color="label" fontSize="0.9em">
+                            &quot;{advert.blurb}&quot;
+                          </Box>
+                        </Stack.Item>
+                        <Stack.Item textAlign="right">
+                          <Box bold>
+                            ({advert.x}, {advert.y})
+                          </Box>
+                          <Box color="label" fontSize="0.85em">
+                            {advert.remaining_minutes} min left
+                          </Box>
+                        </Stack.Item>
+                      </Stack>
+                    </Section>
+                  </Stack.Item>
+                ))}
+              </Stack>
+            )}
+          </Section>
+        )}
       </Stack.Item>
     </Stack>
   );
@@ -318,6 +406,76 @@ type MissionCardProps = {
   mission: Mission;
   isActive: boolean;
   padContents?: PadItem[];
+};
+
+/**
+ * Renders a mission's full payout: credits, each item in the reward bundle
+ * (rare picks accented), research points and vouchers, as " + "-joined
+ * segments. `full` spells out "credits" for the detail view; the compact form
+ * says "cr".
+ */
+const RewardSummary = (props: { mission: Mission; full?: boolean }) => {
+  const { mission, full } = props;
+  const items = mission.reward_items ?? [];
+  const segments: ReactNode[] = [];
+
+  if (mission.value > 0) {
+    segments.push(
+      <Box as="span" bold color="good">
+        {mission.value}
+        {full ? ' credits' : ' cr'}
+      </Box>,
+    );
+  }
+  for (const item of items) {
+    segments.push(
+      <Box as="span" bold color={item.rare ? 'orange' : 'average'}>
+        {!!item.icon && (
+          <img
+            src={`data:image/png;base64,${item.icon}`}
+            style={{
+              verticalAlign: 'middle',
+              marginRight: '4px',
+              maxHeight: '1.6em',
+              maxWidth: '1.6em',
+            }}
+          />
+        )}
+        {item.name}
+      </Box>,
+    );
+  }
+  if (mission.research_reward) {
+    segments.push(
+      <Box as="span" bold color="teal">
+        {mission.research_reward}
+        {full ? ' research points' : ' RP'}
+      </Box>,
+    );
+  }
+  if (mission.voucher_count) {
+    segments.push(
+      <Box as="span" bold color="gold">
+        {mission.voucher_count} trade voucher
+        {mission.voucher_count > 1 ? 's' : ''}
+      </Box>,
+    );
+  }
+
+  return (
+    <>
+      {segments.map((segment, index) => (
+        <Box as="span" key={index}>
+          {index > 0 && (
+            <Box as="span" color="label">
+              {' + '}
+            </Box>
+          )}
+          {segment}
+        </Box>
+      ))}
+    </>
+  );
 };
 
 const MissionCard = (props: MissionCardProps) => {
@@ -337,30 +495,19 @@ const MissionCard = (props: MissionCardProps) => {
 
   return (
     <Section
+      className="MissionBoard__card"
       title={mission.name}
       buttons={
         <Box inline>
+          {!!mission.zone_name && (
+            <Box inline color={mission.zone_color} mr={1}>
+              [{mission.zone_name}]
+            </Box>
+          )}
           <Box inline color={mission.difficulty_color} mr={1}>
             [{mission.difficulty_name}]
           </Box>
-          <Box inline color="good" mr={1}>
-            {mission.value} cr
-          </Box>
-          {mission.reward_item && (
-            <Box inline color="average">
-              +{' '}
-              {mission.reward_item_icon && (
-                <img
-                  src={`data:image/png;base64,${mission.reward_item_icon}`}
-                  style={{
-                    verticalAlign: 'middle',
-                    marginRight: '4px',
-                  }}
-                />
-              )}
-              {mission.reward_item}
-            </Box>
-          )}
+          <RewardSummary mission={mission} />
         </Box>
       }
     >
@@ -374,28 +521,10 @@ const MissionCard = (props: MissionCardProps) => {
         <Box as="span" color="label">
           Rewards:{' '}
         </Box>
-        <Box as="span" color="good" bold>
-          {mission.value} credits
-        </Box>
-        {mission.reward_item && (
-          <Box as="span" color="average" bold>
-            {' '}
-            +{' '}
-            {mission.reward_item_icon && (
-              <img
-                src={`data:image/png;base64,${mission.reward_item_icon}`}
-                style={{
-                  verticalAlign: 'middle',
-                  marginRight: '4px',
-                }}
-              />
-            )}
-            {mission.reward_item}
-          </Box>
-        )}
+        <RewardSummary mission={mission} full />
       </Box>
 
-      {isActive && (
+      {!!isActive && (
         <>
           <LabeledList>
             <LabeledList.Item label="Time Remaining">
@@ -411,50 +540,32 @@ const MissionCard = (props: MissionCardProps) => {
                 {mission.time_remaining_text}
               </ProgressBar>
             </LabeledList.Item>
-            {mission.progress && (
+            {!!mission.progress && (
               <LabeledList.Item label="Progress">
                 {mission.progress}
               </LabeledList.Item>
             )}
           </LabeledList>
           <Divider />
-          <Flex justify="space-between">
-            <Flex.Item>
-              {mission.requires_item ? (
-                <Button
-                  icon="check"
-                  color="good"
-                  disabled={!mission.can_complete && padContents.length === 0}
-                  onClick={() => {
-                    // If there's an item on the pad, use the first one
-                    const itemRef =
-                      padContents.length > 0 ? padContents[0].ref : null;
-                    act('turn_in', { ref: mission.ref, item_ref: itemRef });
-                  }}
-                >
-                  Turn In
-                </Button>
-              ) : (
-                <Button
-                  icon="check"
-                  color="good"
-                  disabled={!mission.can_complete}
-                  onClick={() => act('turn_in', { ref: mission.ref })}
-                >
-                  Complete
-                </Button>
-              )}
-            </Flex.Item>
-            <Flex.Item>
-              <Button
-                icon="times"
-                color="bad"
-                onClick={() => act('abandon', { ref: mission.ref })}
-              >
-                Abandon
-              </Button>
-            </Flex.Item>
-          </Flex>
+          {mission.requires_item ? (
+            <Button
+              icon="check"
+              color="good"
+              disabled={!mission.can_complete && padContents.length === 0}
+              onClick={() => act('turn_in', { ref: mission.ref })}
+            >
+              Turn In
+            </Button>
+          ) : (
+            <Button
+              icon="check"
+              color="good"
+              disabled={!mission.can_complete}
+              onClick={() => act('turn_in', { ref: mission.ref })}
+            >
+              Complete
+            </Button>
+          )}
         </>
       )}
 
@@ -501,6 +612,7 @@ const BountyCard = (props: BountyCardProps) => {
 
   return (
     <Section
+      className="MissionBoard__card"
       title={
         <Box inline color={bounty.was_abandoned ? 'gray' : undefined}>
           <Box as="span" color={bounty.was_abandoned ? 'gray' : 'red'} mr={1}>
@@ -717,9 +829,7 @@ const PlayerBountyCreator = (props: PlayerBountyCreatorProps) => {
         icon="plus"
         color="good"
         disabled={
-          shipBalance < reward ||
-          bountyName.length < 3 ||
-          bountyDesc.length < 5
+          shipBalance < reward || bountyName.length < 3 || bountyDesc.length < 5
         }
         tooltip={
           shipBalance < reward
@@ -761,7 +871,7 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
   return (
     <>
       {/* Show created bounty */}
-      {createdBounty && (
+      {!!createdBounty && (
         <Section
           title="Your Bounty"
           buttons={
@@ -775,7 +885,9 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
           }
         >
           <LabeledList>
-            <LabeledList.Item label="Name">{createdBounty.name}</LabeledList.Item>
+            <LabeledList.Item label="Name">
+              {createdBounty.name}
+            </LabeledList.Item>
             <LabeledList.Item label="Reward">
               <Box color="gold">{createdBounty.reward} cr</Box>
             </LabeledList.Item>
@@ -791,7 +903,7 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
           </LabeledList>
 
           {/* Show pending offers to approve/reject */}
-          {createdBounty.pending_offers &&
+          {!!createdBounty.pending_offers &&
             createdBounty.pending_offers.length > 0 && (
               <Box mt={1}>
                 <Divider />
@@ -802,6 +914,7 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
                   {createdBounty.pending_offers.map((offer) => (
                     <Stack.Item key={offer.ship_ref}>
                       <Section
+                        className="MissionBoard__card"
                         title={offer.ship_name}
                         buttons={
                           <Stack>
@@ -862,7 +975,7 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
       )}
 
       {/* Show claimed bounty */}
-      {claimedBounty && (
+      {!!claimedBounty && (
         <Section
           title="Accepted Contract"
           buttons={
@@ -878,7 +991,9 @@ const PlayerBountyStatus = (props: PlayerBountyStatusProps) => {
           }
         >
           <LabeledList>
-            <LabeledList.Item label="Name">{claimedBounty.name}</LabeledList.Item>
+            <LabeledList.Item label="Name">
+              {claimedBounty.name}
+            </LabeledList.Item>
             <LabeledList.Item label="From">
               {claimedBounty.creator_name || 'Unknown'}
             </LabeledList.Item>
@@ -966,6 +1081,7 @@ const PlayerBountyCard = (props: PlayerBountyCardProps) => {
 
   return (
     <Section
+      className="MissionBoard__card"
       title={
         <Box inline color={bounty.was_abandoned ? 'gray' : undefined}>
           {bounty.name}

@@ -13,24 +13,85 @@
 
 	/// Reference to the ship this action controls
 	var/obj/structure/overmap/ship/managed_ship
+	/// The panel this button opens. Built on first use and reused, so repeated presses
+	/// re-open the same UI instead of leaking a fresh datum holding the ship and owner.
+	var/datum/captain_management_ui/panel
 
 /datum/action/innate/captain_management/New(Target, obj/structure/overmap/ship/ship)
 	. = ..()
 	managed_ship = ship
 
+/datum/action/innate/captain_management/Destroy()
+	managed_ship = null
+	QDEL_NULL(panel)
+	return ..()
+
+/**
+ * A player can hold command of more than one vessel at a time - captaining their own hull
+ * and then claiming a pirate is the normal way it happens - so the button carries the
+ * ship's name. Two buttons both reading "Ship Management" are indistinguishable in the HUD.
+ * Reading the name live here keeps the tooltip correct across renames.
+ */
+/datum/action/innate/captain_management/update_button_name(atom/movable/screen/movable/action_button/button, force = FALSE)
+	name = QDELETED(managed_ship) ? initial(name) : "Ship Management ([managed_ship.name])"
+	return ..()
+
 /datum/action/innate/captain_management/Activate()
-	if(!managed_ship || QDELETED(managed_ship))
+	if(QDELETED(managed_ship))
 		to_chat(owner, span_warning("Your ship no longer exists!"))
-		Remove(owner)
+		qdel(src)
 		return
 
-	// Open TGUI via the UI datum
-	var/datum/captain_management_ui/ui_datum = new(managed_ship, owner)
-	ui_datum.ui_interact(owner)
+	// Command authorization does not outlive the crew roster. The panel refuses every
+	// action once they are off it, so retire the button rather than leave a dead one
+	// sitting in the HUD forever.
+	if(!owner.mind || !(owner.mind in managed_ship.ship_team?.members))
+		to_chat(owner, span_warning("You no longer hold command authorization for [managed_ship.name]."))
+		qdel(src)
+		return
 
-/datum/action/innate/captain_management/Remove(mob/remove_from)
-	managed_ship = null
-	return ..()
+	if(!panel)
+		panel = new(managed_ship, owner)
+	panel.captain = owner
+	panel.ui_interact(owner)
+
+// ===== GRANTING =====
+
+/**
+ * Gives a mob the Ship Management button for a ship, or refreshes the one they already
+ * hold for it. Returns the action.
+ *
+ * Every path that hands out command authority goes through here. Constructing and granting
+ * the action directly stacks another button on the HUD each time: claiming a pirate while
+ * already captaining your own hull left the player holding one button per claim, all named
+ * the same, all still live.
+ */
+/proc/grant_captain_management(mob/captain, obj/structure/overmap/ship/ship)
+	if(!captain || QDELETED(ship))
+		return null
+
+	for(var/datum/action/innate/captain_management/existing in captain.actions)
+		if(existing.managed_ship != ship)
+			continue
+		existing.build_all_button_icons(UPDATE_BUTTON_NAME)
+		return existing
+
+	var/datum/action/innate/captain_management/granted = new(captain, ship)
+	granted.Grant(captain)
+	return granted
+
+/// Retires whatever Ship Management button a mob holds for a given ship.
+/proc/remove_captain_management(mob/captain, obj/structure/overmap/ship/ship)
+	if(!captain || !ship)
+		return
+	// Collected first: qdel removes the action from captain.actions, and mutating the list
+	// mid-loop would skip entries.
+	var/list/retiring = list()
+	for(var/datum/action/innate/captain_management/existing in captain.actions)
+		if(existing.managed_ship == ship)
+			retiring += existing
+	for(var/datum/action/innate/captain_management/doomed as anything in retiring)
+		qdel(doomed)
 
 // ===== UI DATUM =====
 
@@ -66,6 +127,9 @@
 	data["ship_name"] = ship.name
 	data["memo"] = ship.memo || ""
 	data["joining_allowed"] = ship.joining_allowed
+	data["join_password"] = ship.join_password || ""
+	data["can_set_password"] = ship.can_have_join_password()
+	data["crew_only_airlocks"] = ship.crew_only_airlocks
 
 	// Check if user is still captain
 	data["is_captain"] = ship.is_ship_captain(captain)
@@ -82,7 +146,8 @@
 				"job" = member.assigned_role?.title || "Unknown",
 				"ref" = REF(member),
 				"is_captain" = is_captain,
-				"is_online" = !!member.current.client
+				"is_online" = !!member.current.client,
+				"can_take_command" = !is_captain && !!member.current.client && member.current.stat != DEAD
 			))
 
 	// Available players to invite (living players in captain's view, not on this ship)
@@ -114,7 +179,20 @@
 			"time" = ship.pending_invites[ckey]
 		))
 
+	// Crew applications from the lobby
+	data["applications"] = list()
+	ship.prune_crew_applications()
+	for(var/datum/ship_application/application as anything in ship.crew_applications)
+		data["applications"] += list(list(
+			"ref" = REF(application),
+			"name" = application.applicant_name,
+			"ckey" = application.ckey,
+			"message" = application.message,
+			"waiting" = round(application.waiting_time() / 10)
+		))
+
 	data["can_invite"] = COOLDOWN_FINISHED(ship, invite_cooldown)
+	data["command_offer_pending"] = ship.command_offer_pending
 	data["can_rename"] = COOLDOWN_FINISHED(ship, rename_cooldown)
 
 	return data
@@ -163,21 +241,12 @@
 			var/new_name = params["name"]
 			if(!new_name)
 				return TRUE
-			new_name = trim(new_name)
-			if(length(new_name) < 2 || length(new_name) > 42)
-				to_chat(captain, span_warning("Ship name must be 2-42 characters."))
+			new_name = reject_bad_text(trim(new_name), MAX_NAME_LEN)
+			if(!new_name)
+				to_chat(captain, span_warning("Invalid ship name: [MAX_NAME_LEN] plain characters at most."))
 				return TRUE
-			if(!COOLDOWN_FINISHED(ship, rename_cooldown))
-				to_chat(captain, span_warning("Ship rename is on cooldown."))
-				return TRUE
-
-			var/old_name = ship.name
-			ship.name = new_name
-			if(ship.ship_team)
-				ship.ship_team.name = new_name
-			COOLDOWN_START(ship, rename_cooldown, 5 MINUTES)
-			ship.ship_notify("This vessel has been renamed from [old_name] to [new_name].", "SHIP SYSTEMS", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
-			log_game("[key_name(captain)] renamed ship from [old_name] to [new_name]")
+			// set_ship_name handles the cooldown, propagation, crew notification, and logging
+			ship.set_ship_name(new_name, captain)
 			return TRUE
 
 		if("set_memo")
@@ -191,6 +260,47 @@
 		if("toggle_joining")
 			ship.joining_allowed = !ship.joining_allowed
 			to_chat(captain, span_notice("Cryopod joining is now [ship.joining_allowed ? "enabled" : "disabled"]."))
+			return TRUE
+
+		if("set_password")
+			// set_join_password handles validation, the fleet-hull refusal, feedback, and logging
+			ship.set_join_password(params["password"], captain)
+			return TRUE
+
+		if("reset_join_access")
+			if(ship.can_have_join_password() && ship.join_password)
+				ship.reset_join_access(captain)
+			return TRUE
+
+		if("toggle_crew_lock")
+			// set_crew_only_airlocks handles the fleet-hull refusal, the crew announcement and logging
+			ship.set_crew_only_airlocks(!ship.crew_only_airlocks, captain)
+			return TRUE
+
+		if("transfer_command")
+			var/datum/mind/successor = locate(params["ref"])
+			if(!successor || !(successor in ship.ship_team?.members))
+				to_chat(captain, span_warning("Crew member not found."))
+				return TRUE
+			// offer_command handles the pending-offer guard, the prompt and the handover
+			ship.offer_command(successor.current, captain)
+			return TRUE
+
+		if("approve_application")
+			var/datum/ship_application/approving = locate(params["ref"]) in ship.crew_applications
+			if(!approving)
+				to_chat(captain, span_warning("That application is no longer open."))
+				return TRUE
+			ship.resolve_crew_application(approving, TRUE, captain)
+			return TRUE
+
+		if("deny_application")
+			var/datum/ship_application/denying = locate(params["ref"]) in ship.crew_applications
+			if(!denying)
+				to_chat(captain, span_warning("That application is no longer open."))
+				return TRUE
+			// The optional-reason prompt sleeps; do not hold the TGUI call open for it
+			INVOKE_ASYNC(ship, TYPE_PROC_REF(/obj/structure/overmap/ship, prompt_deny_crew_application), denying, captain)
 			return TRUE
 
 // ===== INVITE SYSTEM =====
@@ -253,6 +363,11 @@
 	if(ship.ship_team)
 		ship.ship_team.add_member(player.mind)
 		ship.manifest += player.real_name
+
+	// Remember the captain's invitation across respawns until the password changes
+	// or the captain resets join access.
+	if(ckey)
+		ship.password_cleared_ckeys[ckey] = TRUE
 
 	to_chat(player, span_notice("You have joined the crew of [ship.name]!"))
 	ship.ship_notify("[player.real_name] has joined the crew.", "CREW UPDATE", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)

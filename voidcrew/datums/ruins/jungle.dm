@@ -2,6 +2,9 @@
 
 /datum/map_template/ruin/jungle
 	prefix = "_maps/voidcrew/RandomRuins/JungleRuins/"
+	ruin_type = ZTRAIT_JUNGLE_RUINS
+	allow_duplicates = FALSE
+	cost = 5
 
 /datum/map_template/ruin/jungle/solgov_crash
 	name = "Abandoned SolGov Exploration Pod"
@@ -9,7 +12,7 @@
 	description = "A recently abandoned standard SolGov exploration pod. It may not be powerful or resilient, but it can fly in a pinch."
 	suffix = "jungle_surface_abandonedsolgov.dmm"
 
-/datum/map_template/ruin/jungle/solgov_crash
+/datum/map_template/ruin/jungle/monkies // was a duplicate /solgov_crash block that silently overrode the real one
 	name = "Enlightenment"
 	id = "jungle-monkies"
 	description = "Ook. Ooh Ooh Aah. AAH. OOK OOK OOK. OOK OOK AAH AAAH AAAAAAAAAAAAAAAH!"
@@ -125,3 +128,33 @@
 	id = "ninjashrine"
 	description = "A ninja shrine."
 	suffix = "jungle_surface_ninjashrine.dmm"
+
+/datum/map_template/ruin/jungle/botany
+	name = "Overgrown Botany Lab"
+	id = "jungle-botany"
+	description = "A botanical research post the jungle took back."
+	suffix = "jungle_botany.dmm"
+
+// ---- Voidcrew micro-POIs ----
+// Tiny (5x5, 6x6) scattered setpieces that soak up leftover ruin budget:
+// cost 1-2, duplicates allowed, low weight so they season the pool rather
+// than dominate. Base jungle defaults are cost = 5 and
+// allow_duplicates = FALSE, so both must be overridden here.
+
+/datum/map_template/ruin/jungle/micro_digsite
+	name = "Jungle-Micro Abandoned Dig Site"
+	id = "micro-jungle-digsite"
+	description = "A survey crew cut a pit into the jungle floor and broke into something's burrow. They left overnight."
+	suffix = "jungle_micro_digsite.dmm"
+	cost = 2
+	allow_duplicates = TRUE
+	placement_weight = 0.5
+
+/datum/map_template/ruin/jungle/micro_shrine
+	name = "Jungle-Micro Moss-Eaten Shrine"
+	id = "micro-jungle-shrine"
+	description = "A goddess left in the green a long time ago. Offerings still turn up."
+	suffix = "jungle_micro_shrine.dmm"
+	cost = 1
+	allow_duplicates = TRUE
+	placement_weight = 0.5

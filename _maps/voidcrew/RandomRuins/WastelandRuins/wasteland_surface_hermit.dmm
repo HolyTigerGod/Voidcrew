@@ -7,7 +7,7 @@
 /turf/open/misc/wasteland/lit,
 /area/ruin/powered)
 "f" = (
-/turf/open/floor/plating/dirt/old/dark/lit,
+/turf/open/misc/dirt/old/dark/lit/wasteland,
 /area/ruin/powered)
 "g" = (
 /obj/structure/table/survival_pod,
@@ -25,21 +25,15 @@
 /area/ruin/powered)
 "m" = (
 /obj/machinery/hydroponics/soil,
-/turf/open/floor/plating/dirt/old/lit,
+/turf/open/misc/dirt/old/lit/wasteland,
 /area/ruin/powered)
 "n" = (
 /turf/open/misc/dust/lit,
 /area/overmap_encounter/planetoid/wasteland)
-"o" = (
-/obj/effect/decal/cleanable/dirt/dust,
-/turf/open/floor/wood{
-	icon_state = "wood-broken7"
-	},
-/area/ruin/powered)
 "p" = (
 /turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
+	broken = 1;
+	initial_gas_mix = "o2=22;n2=82;TEMP=293.15"
 	},
 /area/ruin/powered)
 "q" = (
@@ -57,30 +51,24 @@
 "s" = (
 /turf/open/misc/wasteland/lit,
 /area/overmap_encounter/planetoid/wasteland)
-"t" = (
-/obj/effect/decal/cleanable/dirt/dust,
-/turf/open/floor/wood{
-	icon_state = "wood-broken3"
-	},
-/area/ruin/powered)
 "v" = (
 /obj/machinery/portable_atmospherics/canister/oxygen,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "w" = (
 /turf/open/floor/wood{
-	icon_state = "wood-broken7"
+	broken = 1
 	},
 /area/ruin/powered)
 "x" = (
-/obj/structure/sink/puddle,
+/obj/structure/water_source/puddle,
 /obj/item/reagent_containers/cup/bucket/wooden,
-/turf/open/floor/plating/dirt/jungle/dark/lit,
+/turf/open/misc/dirt/jungle/dark/lit,
 /area/ruin/powered)
 "y" = (
 /obj/structure/rack,
 /obj/item/pickaxe/improvised,
-/obj/item/kitchen/knife/combat/survival,
+/obj/item/knife/combat/survival,
 /obj/item/storage/medkit/surgery,
 /turf/open/misc/wasteland/lit,
 /area/ruin/powered)
@@ -91,12 +79,7 @@
 "B" = (
 /obj/effect/decal/cleanable/dirt/dust,
 /turf/open/floor/wood{
-	icon_state = "wood-broken4"
-	},
-/area/ruin/powered)
-"C" = (
-/turf/open/floor/wood{
-	icon_state = "wood-broken4"
+	broken = 1
 	},
 /area/ruin/powered)
 "D" = (
@@ -111,22 +94,17 @@
 /obj/item/seeds/plump,
 /obj/item/seeds/tower,
 /obj/item/seeds/reishi,
-/obj/item/reagent_containers/food/snacks/grown/mushroom/glowshroom,
+/obj/item/food/grown/mushroom/glowshroom,
 /turf/open/misc/wasteland/lit,
 /area/ruin/powered)
 "G" = (
 /obj/machinery/hydroponics/soil,
-/turf/open/floor/plating/dirt/jungle/dark/lit,
+/turf/open/misc/dirt/jungle/dark/lit,
 /area/ruin/powered)
 "H" = (
 /obj/item/storage/toolbox/emergency,
 /obj/effect/decal/cleanable/dirt/dust,
 /turf/open/floor/wood,
-/area/ruin/powered)
-"I" = (
-/turf/open/floor/wood{
-	icon_state = "wood-broken"
-	},
 /area/ruin/powered)
 "J" = (
 /obj/item/shovel,
@@ -136,7 +114,7 @@
 /obj/item/clothing/suit/space/orange,
 /obj/item/clothing/head/helmet/space/orange,
 /obj/structure/rack,
-/obj/item/gun/ballistic/rifle/boltaction/polymer,
+/obj/item/gun/ballistic/rifle/boltaction,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "L" = (
@@ -144,6 +122,11 @@
 /area/ruin/powered)
 "M" = (
 /turf/closed/wall,
+/area/ruin/powered)
+"N" = (
+/obj/effect/zone_mobs/wildlife,
+/obj/effect/decal/cleanable/dirt/dust,
+/turf/open/misc/dust/lit,
 /area/ruin/powered)
 "O" = (
 /obj/structure/table/glass,
@@ -164,21 +147,22 @@
 /turf/open/floor/wood,
 /area/ruin/powered)
 "W" = (
-/obj/effect/mob_spawn/human/hermit,
+/obj/effect/mob_spawn/corpse/human/hermit,
 /turf/open/misc/wasteland/lit,
 /area/ruin/powered)
 "X" = (
-/turf/open/floor/plating/dirt/old/lit,
+/turf/open/misc/dirt/old/lit/wasteland,
 /area/ruin/powered)
 "Y" = (
 /obj/item/flashlight/lantern,
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/powered)
 "Z" = (
+/obj/structure/closet/crate/zone_loot/expedition,
 /turf/open/floor/plating{
-	icon_state = "platingdmg2"
+	broken = 1
 	},
 /area/ruin/powered)
 
@@ -254,7 +238,7 @@ P
 S
 M
 G
-o
+B
 w
 z
 y
@@ -273,7 +257,7 @@ G
 Z
 Y
 H
-t
+B
 B
 M
 M
@@ -291,7 +275,7 @@ J
 a
 X
 Q
-j
+N
 j
 W
 g
@@ -304,8 +288,8 @@ P
 (8,1,1) = {"
 S
 G
-I
-C
+w
+w
 T
 Q
 L

@@ -37,6 +37,24 @@
 	)
 	AddElement(/datum/element/connect_loc, loc_connections)
 
+/obj/machinery/mission_pad/connect_to_shuttle(mapload, obj/docking_port/mobile/voidcrew/port, obj/docking_port/stationary/dock)
+	. = ..()
+	if(!istype(port))
+		return
+	if(port.current_ship)
+		link_to_ship(port.current_ship)
+		return
+	// At roundstart this hook fires inside action_load(), before the subsystem
+	// assigns port.current_ship - finish the link when the ship load completes.
+	// The Initialize() timer stays as the fallback for in-round construction.
+	RegisterSignal(port, COMSIG_VOIDCREW_SHIP_LOADED, PROC_REF(on_ship_loaded), override = TRUE)
+
+/obj/machinery/mission_pad/proc/on_ship_loaded(obj/docking_port/mobile/voidcrew/source)
+	SIGNAL_HANDLER
+	UnregisterSignal(source, COMSIG_VOIDCREW_SHIP_LOADED)
+	if(!linked_ship && source.current_ship)
+		link_to_ship(source.current_ship)
+
 /obj/machinery/mission_pad/Destroy()
 	if(linked_console)
 		linked_console.linked_pad = null
@@ -88,9 +106,9 @@
 /obj/machinery/mission_pad/proc/check_for_active_negotiation()
 	if(!linked_ship?.shuttle?.shuttle_areas)
 		return
-	// Find ship comms holopad with active negotiation
+	// Find a holopad with an active negotiation
 	for(var/area/ship_area as anything in linked_ship.shuttle.shuttle_areas)
-		for(var/obj/machinery/holopad/ship_comms/holopad in ship_area)
+		for(var/obj/machinery/holopad/holopad in ship_area)
 			if(holopad.active_negotiation)
 				// Link ourselves to the active negotiation
 				holopad.active_negotiation.link_mission_pad(src)
@@ -173,23 +191,62 @@
  */
 /obj/machinery/mission_pad/proc/process_tribute_item(obj/item/item)
 	if(!tribute_negotiation)
-		message_admins("DEBUG process_tribute_item: no tribute_negotiation")
 		return
 
-	message_admins("DEBUG process_tribute_item: calling process_item_payment for [item] ([item.type])")
 	// Check if this item is accepted as tribute
 	if(tribute_negotiation.process_item_payment(item))
 		visible_message(span_notice("The [item.name] is teleported away as tribute!"))
-	else
-		message_admins("DEBUG process_tribute_item: process_item_payment returned FALSE")
 
 /obj/machinery/mission_pad/examine(mob/user)
 	. = ..()
+	if(anchored)
+		. += span_notice("It is <b>bolted</b> to the floor.")
+	else
+		. += span_notice("It is <i>unbolted</i> from the floor and can be dragged elsewhere.")
 	if(tribute_negotiation)
 		. += span_warning("This pad is linked to an active pirate negotiation!")
 		var/remaining = tribute_negotiation.get_remaining_items()
 		if(remaining > 0)
 			. += span_notice("Place [remaining] more [tribute_negotiation.demanded_item_name] here to pay tribute.")
+
+/*
+ * The pad had a circuit board and a research design from the start but never wired up
+ * any of the machine tool acts, so nothing could open its panel and nothing could pry
+ * the board back out - it was welded to the tile it spawned on. Standard machine flow
+ * now: wrench to unbolt and move it, screwdriver to open the panel, crowbar to take it
+ * apart into its frame and board.
+ *
+ * A pad that moves keeps working: it finds its ship by asking which ship's shuttle areas
+ * contain the area it is standing in (find_and_link_ship), and any pad built or rebuilt
+ * in-round runs that same lookup a second after it initializes, so mission delivery code
+ * walking ship.linked_mission_pads still finds it wherever it ends up.
+ */
+/obj/machinery/mission_pad/wrench_act(mob/living/user, obj/item/tool)
+	. = ..()
+	if(.)
+		return .
+	if(default_unfasten_wrench(user, tool, time = 2 SECONDS) != SUCCESSFUL_UNFASTEN)
+		return ITEM_INTERACT_BLOCKING
+	if(anchored)
+		// A pad bolted down somewhere new may be sitting beside a console it never met,
+		// and one carried aboard after being built elsewhere has no ship yet.
+		if(!linked_ship)
+			find_and_link_ship()
+		if(!linked_console)
+			find_linked_console()
+	return ITEM_INTERACT_SUCCESS
+
+/obj/machinery/mission_pad/screwdriver_act(mob/living/user, obj/item/tool)
+	. = ..()
+	if(.)
+		return .
+	return default_deconstruction_screwdriver(user, "lpad-idle-open", "lpad-idle", tool)
+
+/obj/machinery/mission_pad/crowbar_act(mob/living/user, obj/item/tool)
+	. = ..()
+	if(.)
+		return .
+	return default_deconstruction_crowbar(tool)
 
 /**
  * Circuit board for the mission pad.

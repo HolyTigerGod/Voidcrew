@@ -253,7 +253,7 @@ export const NaniteCloudBackupDetails = (props, context) => {
 
 export const NaniteCloudControl = (props, context) => {
   const { act, data } = useBackend(context);
-  const { has_disk, current_view, new_backup_id } = data;
+  const { has_disk, current_view, new_backup_id, ship_name } = data;
   return (
     <Window width={375} height={700} resizable>
       <Window.Content scrollable>
@@ -289,9 +289,10 @@ export const NaniteCloudControl = (props, context) => {
                   value={new_backup_id}
                   minValue={1}
                   maxValue={100}
+                  step={1}
                   stepPixelSize={4}
                   width="39px"
-                  onChange={(e, value) =>
+                  onChange={(value) =>
                     act('update_new_backup_value', {
                       value: value,
                     })
@@ -301,6 +302,12 @@ export const NaniteCloudControl = (props, context) => {
               </>
             )
           }>
+          <NoticeBox info>
+            Cloud networks are local to {ship_name || 'this ship'}. Nanites join
+            a backup by having their cloud ID set in a nanite chamber aboard
+            this ship. Matching ID numbers on other ships are separate,
+            unrelated clouds.
+          </NoticeBox>
           {!data.current_view ? (
             <NaniteCloudBackupList />
           ) : (

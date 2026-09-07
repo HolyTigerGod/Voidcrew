@@ -7,19 +7,67 @@ Performance Note:
 	See setup_mass_tracking() in ship.dm for details.
 */
 
-#define MAX_OVERMAP_EVENT_CLUSTERS 24
-#define MAX_OVERMAP_EVENTS 200
+// Local clusters cover far fewer tiles than the old orbit-wide spread. Give them enough
+// seeds to fill the chart; individual orbits still obey their density cap below.
+#define MAX_OVERMAP_EVENT_CLUSTERS 200
+#define MAX_OVERMAP_EVENTS 900
 #define MAX_OVERMAP_PLACEMENT_ATTEMPTS 40
-#define MAX_OVERMAP_PLANETS_TO_SPAWN 15
+
+/*
+ * Hazard clusters (setup_dangers)
+ *
+ * Hazards used to be seeded by orbit: pick a ring, then roll spread_chance against every
+ * single tile of that ring's full circumference. On a ring 20 tiles out that is 160 tiles
+ * rolled at 75% for a nebula, so one seed drew a closed band right around the map, and a
+ * handful of seeds ate the whole event budget before most event types had spawned at all.
+ * That is where the "walls of hazards" came from, and why some rounds only ever showed two
+ * or three kinds of storm.
+ *
+ * A cluster now grows outward from its own seed tile instead, a few tiles across, with the
+ * three bounds below keeping it something a pilot flies around. The zone rings themselves
+ * are untouched - green/yellow/red are still static concentric bands.
+ */
+
+/// Multiplier applied to a cluster's spread chance for every step away from its seed tile
+#define OVERMAP_CLUSTER_SPREAD_DECAY 0.6
+/// Furthest, in tiles, a cluster may reach from its seed
+#define OVERMAP_CLUSTER_MAX_RADIUS 3
+/// Widest arc, in degrees around the sun, a single cluster may cover. Half of this either
+/// side of the seed's bearing, so no cluster can ever curl far enough to fence off an orbit.
+#define OVERMAP_CLUSTER_MAX_ARC 90
+/// No orbit may end up with more than this share of its tiles carrying an event.
+/// Density alone does not ensure a route: adjacent clusters can still join into walls.
+#define OVERMAP_RING_MAX_EVENT_FRACTION 0.35
+/// Three-tile-wide cardinal and diagonal corridors connect the outer map to the inner bands.
+#define OVERMAP_TRAVEL_LANE_HALF_WIDTH 1
+/// Clear loops connect those corridors, letting crews change direction without crossing hazards.
+#define OVERMAP_TRAVEL_LANE_RING_SPACING 7
+/// Weight bonus in phase 2 for an event type a zone band has not been dealt yet, so the
+/// three bands end up with comparable variety and not just comparable counts.
+#define OVERMAP_UNSEEN_TYPE_WEIGHT_BONUS 2
 
 SUBSYSTEM_DEF(overmap)
 	name = "Overmap"
 	wait = 10 // Fires every 1 second (10 deciseconds)
-	init_order = INIT_ORDER_OVERMAP
+	init_order = INIT_ORDER_OVERMAP // NOTE: dead - the MC overwrites init_order from the dependency graph (see Master/Initialize)
 	flags = NONE
-	runlevels = RUNLEVEL_SETUP | RUNLEVEL_GAME
+	// LOBBY is in here so the subsystem is already ticking - the worldgen watchdog and
+	// ship bookkeeping below - while the lobby is up and roundstart hulls are loading.
+	runlevels = RUNLEVEL_LOBBY | RUNLEVEL_SETUP | RUNLEVEL_GAME
+	// Init ordering is purely dependency-topological now. With only mapping declared,
+	// the MC initialized SSovermap BEFORE SSatoms/SSair/SSlighting, so spawn_initial_ship()
+	// (plus the space ruin / trader outpost loads) placed a whole hull whose atoms were
+	// still uninitialized, then action_load() immediately shuttle-moved it to transit:
+	// ~350 runtimes on every boot (null turf air -> null.copy_from()/remove_ratio(),
+	// null atmospherics node lists in lateShuttleMove, doubled lighting objects).
+	// These dependencies push our init after the world is actually ready to load ships,
+	// making the roundstart hull load identical to the proven mid-round purchase path.
 	dependencies = list(
 		/datum/controller/subsystem/mapping,
+		/datum/controller/subsystem/atoms, // template loads must initialize their atoms (initTemplateBounds no-ops pre-SSatoms)
+		/datum/controller/subsystem/air, // hull turfs need real gas mixtures before the transit move copies air around
+		/datum/controller/subsystem/lighting, // otherwise SSlighting's whole-map sweep double-builds every hull lighting object
+		/datum/controller/subsystem/shuttle, // create_ship()/action_load() run during our Initialize
 	)
 
 	/// Centre of the overmap
@@ -34,6 +82,8 @@ SUBSYSTEM_DEF(overmap)
 	var/list/map_zones = list()
 	///List of all simulated ships
 	var/list/simulated_ships = list()
+	/// world.time of the next derelict occupancy sweep - see sweep_derelicts()
+	var/next_derelict_sweep = 0
 	/// List of NPC ships that need mass recalculated (damaged ships)
 	/// Used for performance - NPC ships cache mass and only recalc when damaged
 	var/list/dirty_npc_ships = list()
@@ -46,16 +96,27 @@ SUBSYSTEM_DEF(overmap)
 	/// Time taken for a bluespace jump to complete after it initiates (in deciseconds)
 	var/jump_completion_time = 1200
 
-	/// Type paths of ship templates to spawn at round start. Change this list to control what ships appear.
-	var/list/roundstart_ship_templates = list(
-		/datum/map_template/shuttle/voidcrew/scarab,
-		/datum/map_template/shuttle/voidcrew/meta,
-		/datum/map_template/shuttle/voidcrew/box,
-	)
-	/// The primary roundstart ship (first in the list). Kept for backward compatibility.
+	/// Ready players each roundstart hull is expected to carry. The fleet scales off
+	/// this once turnout is known - see SSticker.create_characters().
+	var/roundstart_crew_per_ship = 6
+	/// Hard ceiling on roundstart hulls, however big the turnout is.
+	var/roundstart_max_ships = 4
+	/// The first roundstart ship spawned. Kept for backward compatibility.
 	var/obj/structure/overmap/ship/initial_ship
 	/// All ships spawned at round start.
 	var/list/obj/structure/overmap/ship/initial_ships = list()
+	/// Hull types the roundstart fleet has already rolled, so a second hull is a different class
+	var/list/spent_roundstart_hulls = list()
+	/// DEV SWITCH - set to FALSE to skip planets entirely: no overmap contacts, no terrain
+	/// generation, and no lobby hold waiting for it. For local iteration on things that
+	/// aren't planets; planet missions simply stop being offered. Turn it back on before
+	/// committing. (Preloaded planets are separate - those are the *_planet_count vars in
+	/// voidcrew/mapping/_mapping.dm, already 0.)
+	var/spawn_planets = TRUE
+	/// How many planets of each terrain type the round gets. Every one of them is a charted
+	/// contact with no interior until a ship actually goes there, so raising this adds
+	/// places to go without adding anything to the round-start wait.
+	var/dynamic_planets_per_type = 6
 
 /datum/controller/subsystem/overmap/Initialize(start_timeofday)
 	create_map()
@@ -63,6 +124,10 @@ SUBSYSTEM_DEF(overmap)
 	setup_dangers()
 	setup_planets()
 	setup_space_ruins()
+	setup_trader_outposts()
+	schedule_vestige_ruins()
+	schedule_contested_caches()
+	schedule_lich_lair()
 	spawn_initial_ship()
 
 	return SS_INIT_SUCCESS
@@ -77,6 +142,295 @@ SUBSYSTEM_DEF(overmap)
 	for(var/obj/structure/overmap/ship/ship as anything in simulated_ships)
 		if(QDELETED(ship))
 			simulated_ships -= ship
+			continue
+		// A dock, undock or approach whose callback chain was lost leaves the ship pinned in
+		// a state that greys out every helm control, with nothing else in the game able to
+		// clear it. Polled rather than timer-armed on purpose - see check_manoeuvre_stalled().
+		ship.check_manoeuvre_stalled()
+
+	// Derelict lifecycle: crewless hulls abandon, abandoned hulls eventually despawn.
+	// Gated on the round actually running - this subsystem also fires through the lobby,
+	// and a long lobby must not run the crewless clock against roundstart hulls nobody
+	// has been able to board yet.
+	if(SSticker.IsRoundInProgress() && world.time >= next_derelict_sweep)
+		next_derelict_sweep = world.time + DERELICT_SWEEP_INTERVAL
+		sweep_derelicts()
+
+	// A build or teardown that runtimed partway through never released the worldgen
+	// queue, and everything waiting on it would sit there for the rest of the round.
+	worldgen_watchdog()
+
+/**
+ * Once-a-minute derelict bookkeeping over the whole fleet. Occupancy is the only
+ * signal, and has_active_crew() is what it means: a living, connected player aboard,
+ * or one of the hull's own roster alive, connected and on the hull's z-level - the
+ * landing party standing on the planet their ship is parked on. Three clocks run off
+ * it, the first independent of the other two:
+ *
+ * 0. A hull berthed at a dynamic encounter with nobody alive at the site - no active
+ *    crew, and no living player anywhere in the site's own footprint - is force-undocked
+ *    after SHIP_SITE_DEAD_UNDOCK_TIME. It holds a berth flag and sits in the site's contents
+ *    for as long as it stays, and a dead crew never undocks, so an encounter's map zone
+ *    (often a whole z-level) used to stay pinned until the hull itself despawned an hour
+ *    and a half later. The hull is not otherwise touched; the two clocks below carry on
+ *    against it in open space.
+ *
+ * 1. A hull with no active crew for SHIP_CREWLESS_ABANDON_TIME is abandoned - the
+ *    claimable-derelict state. This is the trigger crew death alone never provided:
+ *    a crew that logs off, cryos out or walks away is an abandoned ship too. Being
+ *    outdoors is not walking away, though - an away team on the hull's own z-level
+ *    holds it (has_active_crew()), and the carve-outs that stay refused are the ones
+ *    that matter: dead, ghosted, cryoed and logged-off crew count for nothing.
+ *    Getting the ship back afterwards is one claim at the helm. A hull that never
+ *    carried a crew at all (roundstart spares, latejoin free hulls nobody took) skips
+ *    the derelict window - there is nothing aboard worth exploring and no claim to
+ *    honour.
+ * 2. An abandoned hull older than SHIP_DERELICT_DESPAWN_TIME despawns for good via
+ *    despawn_derelict(). Anyone physically aboard postpones that; claiming cancels it.
+ *    No z-level credit here, and there is nothing to give it to - abandon_ship() has
+ *    already emptied the roster, so an ex-crew who want their hull back have to walk
+ *    into it and claim it at the helm rather than stand next to it.
+ *
+ * At most one hull despawns per sweep: teardown is the expensive part (HardDelete
+ * has been measured at 600+ ms per call late in a long round), and the sweep comes
+ * back in a minute anyway.
+ *
+ * Live NPC ships are exempt from clock 1 - their crews are NPCs, so player occupancy
+ * says nothing about them and their own crew-death tracking drives abandonment. Once
+ * abandoned, claimed by players, or destroyed they are subject to the same rules as any
+ * hull, which is what finally stops every killed pirate leaving a permanent wreck.
+ */
+/datum/controller/subsystem/overmap/proc/sweep_derelicts()
+	var/despawned_one = FALSE
+	// Copy: despawn_derelict() qdels the hull, whose Destroy() takes it out of
+	// simulated_ships, and removing the current entry mid-iteration shifts the list and
+	// skips the next ship for this pass.
+	for(var/obj/structure/overmap/ship/ship as anything in simulated_ships.Copy())
+		if(QDELETED(ship))
+			continue
+		if(ship.has_active_crew())
+			ship.crewless_since = 0
+			ship.site_dead_since = 0
+			ship.site_dead_undock_refused = FALSE
+			continue
+		var/obj/structure/overmap/ship/npc/npc_ship
+		if(istype(ship, /obj/structure/overmap/ship/npc))
+			npc_ship = ship
+		// Disarmed pirates have already freed their pool slot. Their living NPC crew
+		// must not exempt the retired hull from cleanup for the rest of the round.
+		if(npc_ship && !npc_ship.player_controlled && !isnull(npc_ship.disarmed_despawn_at))
+			if(!despawned_one)
+				despawned_one = npc_ship.despawn_disarmed()
+			continue
+		// Clock 0, and the only one that runs on a hull nobody has given up on yet: a
+		// crewless hull berthed at a dynamic encounter with nothing alive on the site
+		// either is force-undocked back into open space, so the encounter can tear its
+		// interior down instead of waiting out the two clocks below. See
+		// check_dead_site_undock() - it does its own docked/site-type filtering, and
+		// only reaches a player scan for hulls that are actually berthed somewhere.
+		ship.check_dead_site_undock()
+		if(!ship.crewless_since)
+			ship.crewless_since = world.time
+			continue
+		if(ship.abandoned)
+			if(!ship.abandoned_at) // flagged before this clock existed - start it now
+				ship.abandoned_at = world.time
+				continue
+			if(despawned_one || world.time - ship.abandoned_at < SHIP_DERELICT_DESPAWN_TIME)
+				continue
+			despawned_one = ship.despawn_derelict()
+			continue
+		// A live NPC hull is exempt from the crewless clock: its crew are NPCs, so player
+		// occupancy says nothing about it, and its own crew-death tracking drives
+		// abandonment. A DESTROYED one is not. Losing its hull docks a pirate into a
+		// crash site it mints on the spot (make_crash_site), and that site is a fresh map
+		// zone and often a fresh z-level; with the exemption unconditional, any wreck
+		// nobody boarded to finish off held both for the rest of the round. Let it take
+		// the ordinary clocks instead. Nothing here touches the pirate pool - the slot
+		// still resolves on crew wipe, on the key, at abandon_ship(), or from Destroy().
+		if(npc_ship && !npc_ship.player_controlled && npc_ship.integrity_state != SHIP_INTEGRITY_DISABLED)
+			continue
+		if(world.time - ship.crewless_since < SHIP_CREWLESS_ABANDON_TIME)
+			continue
+		// crew_ever_spawned keeps a wreck out of the never-crewed fast path: an NPC hull
+		// carries no manifest and no ship_team, but it is emphatically crewed, and its
+		// wreck is loot and a claimable hull. It gets the full derelict window like any
+		// other ship that had people on it.
+		if(!length(ship.manifest) && !LAZYLEN(ship.ship_team?.members) && !npc_ship?.crew_ever_spawned)
+			// Never crewed: straight to despawn, no derelict window
+			if(!despawned_one)
+				log_shuttle("[ship.name]: never crewed and empty for [(world.time - ship.crewless_since) / 600] minutes - despawning without a derelict window.")
+				despawned_one = ship.despawn_derelict()
+			continue
+		log_shuttle("[ship.name]: no crew aboard for [(world.time - ship.crewless_since) / 600] minutes - abandoning.")
+		ship.abandon_ship(crash = TRUE) // only actually crashes a hull that is in flight
+
+/**
+ * How much queued lighting work is still outstanding for `wait_footprint`, or for the
+ * whole world when it is null.
+ *
+ * Two things this counts that the obvious version does not:
+ *
+ * 1. `SSlighting.current_sources`. Every non-resumed fire moves the WHOLE of
+ *    sources_queue into current_sources and leaves sources_queue empty behind it
+ *    (see /datum/controller/subsystem/lighting/fire), so a backlog that is actively
+ *    being chewed through lives there, not in the queue. Watching only the queue reads
+ *    "settled" in the middle of a drain.
+ * 2. The footprint. The queues are global. A packed z-level carries up to four tenants,
+ *    and the rest of the world - ships under way, a lit mob walking around a trader
+ *    outpost, weather - feeds them continuously. Counting all of that made the caller
+ *    below wait on the entire server going quiet, which on a live round never happens.
+ */
+/datum/controller/subsystem/overmap/proc/lighting_backlog_for(datum/map_footprint/wait_footprint)
+	if(isnull(wait_footprint) || !wait_footprint.z_value || isnull(wait_footprint.low_x))
+		return length(SSlighting.sources_queue) + length(SSlighting.current_sources) + length(SSlighting.corners_queue) + length(SSlighting.objects_queue)
+
+	var/low_x = wait_footprint.low_x
+	var/low_y = wait_footprint.low_y
+	var/high_x = wait_footprint.high_x
+	var/high_y = wait_footprint.high_y
+	var/z_value = wait_footprint.z_value
+	var/backlog = 0
+
+	for(var/list/source_list as anything in list(SSlighting.sources_queue, SSlighting.current_sources))
+		for(var/datum/light_source/source as anything in source_list)
+			var/turf/source_turf = source.source_turf
+			if(!isturf(source_turf) || source_turf.z != z_value)
+				continue
+			if(source_turf.x < low_x || source_turf.x > high_x || source_turf.y < low_y || source_turf.y > high_y)
+				continue
+			backlog++
+
+	// A corner's own x/y are the VERTEX, half a tile up and right of the turf that owns it
+	// as its NE, so the rect it can legitimately belong to runs half a tile past both
+	// high edges. Compared loosely rather than exactly - one tile of slop on the boundary
+	// costs nothing and getting it wrong strands the wait.
+	for(var/datum/lighting_corner/corner as anything in SSlighting.corners_queue)
+		if(corner.z != z_value)
+			continue
+		if(corner.x < low_x - 1 || corner.x > high_x + 1 || corner.y < low_y - 1 || corner.y > high_y + 1)
+			continue
+		backlog++
+
+	for(var/datum/lighting_object/lighting_object as anything in SSlighting.objects_queue)
+		var/turf/affected_turf = lighting_object.affected_turf
+		if(!isturf(affected_turf) || affected_turf.z != z_value)
+			continue
+		if(affected_turf.x < low_x || affected_turf.x > high_x || affected_turf.y < low_y || affected_turf.y > high_y)
+			continue
+		backlog++
+
+	return backlog
+
+/// TRUE when `checked` lies inside `wait_footprint`. A null footprint means the whole
+/// world, matching lighting_backlog_for(). Deliberately NOT used by that proc, which
+/// inlines the same test - it runs over the whole queue once a second, and this one only
+/// ever runs when something has already gone wrong.
+/datum/controller/subsystem/overmap/proc/footprint_holds_turf(datum/map_footprint/wait_footprint, turf/checked)
+	if(isnull(wait_footprint) || !wait_footprint.z_value || isnull(wait_footprint.low_x))
+		return TRUE
+	if(!isturf(checked) || checked.z != wait_footprint.z_value)
+		return FALSE
+	return checked.x >= wait_footprint.low_x && checked.x <= wait_footprint.high_x && checked.y >= wait_footprint.low_y && checked.y <= wait_footprint.high_y
+
+/**
+ * Names what is still sitting in the lighting queues for `wait_footprint`, as a one-line
+ * "3x /obj/thing @(61,190)" summary.
+ *
+ * This exists because "the lighting never settles" is not actionable and "the lighting
+ * never settles because eight /obj/structure/spawner/ice_moon/demonic_portal keep
+ * re-queueing" is. Only ever called off the settle wait's failure paths, so it may be as
+ * slow and as allocating as it likes.
+ */
+/datum/controller/subsystem/overmap/proc/lighting_backlog_report(datum/map_footprint/wait_footprint, max_entries = 8)
+	var/list/tally = list()
+	var/list/example_coords = list()
+
+	for(var/datum/light_source/source as anything in (SSlighting.sources_queue + SSlighting.current_sources))
+		var/turf/source_turf = source.source_turf
+		if(!footprint_holds_turf(wait_footprint, source_turf))
+			continue
+		var/atom/source_atom = source.source_atom
+		// The OWNER, not the turf under it: a lantern on a wandering mob and a self-lit
+		// lava tile are the same "source on this turf" and completely different problems.
+		var/label = "source [source_atom ? source_atom.type : "<none>"]"
+		tally[label] = (tally[label] || 0) + 1
+		example_coords[label] ||= "([source_turf.x],[source_turf.y])"
+
+	for(var/datum/lighting_corner/corner as anything in SSlighting.corners_queue)
+		if(!isnull(wait_footprint) && wait_footprint.z_value)
+			if(corner.z != wait_footprint.z_value)
+				continue
+			if(corner.x < wait_footprint.low_x - 1 || corner.x > wait_footprint.high_x + 1 || corner.y < wait_footprint.low_y - 1 || corner.y > wait_footprint.high_y + 1)
+				continue
+		var/label = "corner ([LAZYLEN(corner.affecting)] affecting)"
+		tally[label] = (tally[label] || 0) + 1
+		example_coords[label] ||= "([corner.x],[corner.y])"
+
+	for(var/datum/lighting_object/lighting_object as anything in SSlighting.objects_queue)
+		var/turf/affected_turf = lighting_object.affected_turf
+		if(!footprint_holds_turf(wait_footprint, affected_turf))
+			continue
+		var/label = "object [affected_turf ? affected_turf.type : "<none>"]"
+		tally[label] = (tally[label] || 0) + 1
+		example_coords[label] ||= "([affected_turf.x],[affected_turf.y])"
+
+	if(!length(tally))
+		return "nothing pending on the footprint"
+
+	sortTim(tally, GLOBAL_PROC_REF(cmp_numeric_dsc), associative = TRUE)
+	var/list/lines = list()
+	for(var/label in tally)
+		lines += "[tally[label]]x [label] @[example_coords[label]]"
+		if(length(lines) >= max_entries)
+			break
+	return lines.Join(", ")
+
+/**
+ * Sleeps until the lighting work for `wait_footprint` has drained, so a crew docking onto
+ * a freshly built planet lands on a rendered surface instead of a black one.
+ *
+ * Returns when EITHER of two things is true:
+ *
+ * - the footprint's backlog is empty on two consecutive samples (it finished), or
+ * - the backlog has failed to reach a new low for LIGHTING_SETTLE_PLATEAU_SAMPLES
+ *   samples (it is not finishing).
+ *
+ * The second exit is the important one and it is not a fudge. "Wait for zero" only
+ * terminates if the thing being watched is a finite backlog draining to nothing. A live
+ * planet is not: a demonic portal's light, a lit mob wandering the surface, a storm
+ * overhead all feed the queues forever, and a wait that insists on zero simply burns its
+ * whole cap every time. Measured 2026-08-21: every ice planet in round 1068 sat out the
+ * full 90 seconds and then logged sources=3 - three sources, not a backlog. What we
+ * actually want to know is "has the initial render stopped making progress", and a
+ * backlog that has stopped shrinking answers exactly that.
+ *
+ * Capped regardless, so a wedged queue can't hold the round hostage.
+ */
+/datum/controller/subsystem/overmap/proc/wait_for_lighting_settle(cap = 5 MINUTES, datum/map_footprint/wait_footprint)
+	var/started = world.time
+	var/consecutive_empty = 0
+	var/lowest_backlog = INFINITY
+	var/samples_without_progress = 0
+	while(world.time < started + cap)
+		var/backlog = lighting_backlog_for(wait_footprint)
+		if(!backlog)
+			consecutive_empty++
+			if(consecutive_empty >= LIGHTING_SETTLE_EMPTY_SAMPLES)
+				return TRUE
+		else
+			consecutive_empty = 0
+			if(backlog < lowest_backlog)
+				lowest_backlog = backlog
+				samples_without_progress = 0
+			else
+				samples_without_progress++
+				if(samples_without_progress >= LIGHTING_SETTLE_PLATEAU_SAMPLES)
+					log_mapping("SSovermap: lighting settle plateaued at [backlog] pending after [(world.time - started) / 10]s, releasing. Pending: [lighting_backlog_report(wait_footprint)]")
+					return TRUE
+		sleep(LIGHTING_SETTLE_POLL)
+	log_mapping("SSovermap: lighting settle wait hit its [cap / 600] minute cap (scoped=[lighting_backlog_for(wait_footprint)] global sources=[length(SSlighting.sources_queue)] current=[length(SSlighting.current_sources)] corners=[length(SSlighting.corners_queue)] objects=[length(SSlighting.objects_queue)]). Pending: [lighting_backlog_report(wait_footprint)]")
+	return FALSE
 
 /*
  * Bluespace jump procs
@@ -147,6 +501,55 @@ SUBSYSTEM_DEF(overmap)
 	// not actually the centre but close enough
 	overmap_centre = get_turf(locate((OVERMAP_LEFT_SIDE_COORD + ((OVERMAP_SIZE - 1) / 2)) - 1, (OVERMAP_SOUTH_SIDE_COORD + ((OVERMAP_SIZE - 1) / 2)) - 1, OVERMAP_Z_LEVEL))
 
+	relocate_lobby()
+
+/**
+ * Moves the pre-round lobby off the live overmap.
+ *
+ * The tg lobby anchor (the new_player landmark in CentCom.dmm, /area/misc/start) sits
+ * in the top-left corner of the centcom z - the exact block create_map() just turned
+ * into the live overmap. Left alone, everyone in the lobby is parked ON an overmap
+ * tile and can watch real ships and planets drift past the title menu before they
+ * have even joined the round, which players were openly using to metagame (scouting
+ * planets and ship positions from the lobby).
+ *
+ * So: strip every lobby spawn point that falls inside the overmap block, park the
+ * lobby over an empty corner of the same z far outside it, and sweep any player who
+ * already spawned onto the old spot. The lobby keeps its overmap look through a
+ * static starfield backdrop on the lobby HUD instead
+ * (/atom/movable/screen/lobby/starfield, voidcrew/edits/mobs/new_player.dm).
+ */
+/datum/controller/subsystem/overmap/proc/relocate_lobby()
+	// Far top-right corner of the centcom z: empty space in CentCom.dmm, and nothing
+	// is ever runtime-spawned there (ships, hangars and planets all load into
+	// reserved z-levels; the overmap block is the only thing built onto this z).
+	var/turf/safe_lobby_turf = locate(max(world.maxx - 16, OVERMAP_RIGHT_SIDE_COORD + 10), world.maxy - 16, OVERMAP_Z_LEVEL)
+	if(isnull(safe_lobby_turf) || is_turf_in_overmap_block(safe_lobby_turf))
+		stack_trace("relocate_lobby() could not find a turf outside the overmap block - lobby players can see the live overmap!")
+		return
+
+	var/list/sanitized_starts = list()
+	for(var/atom/start_loc as anything in GLOB.newplayer_start)
+		var/turf/start_turf = get_turf(start_loc)
+		if(start_turf && is_turf_in_overmap_block(start_turf))
+			continue
+		sanitized_starts += start_loc
+	if(!length(sanitized_starts))
+		sanitized_starts += safe_lobby_turf
+	GLOB.newplayer_start = sanitized_starts
+
+	// Anyone who connected before this ran was spawned onto the old landmark
+	for(var/mob/dead/new_player/lobby_player as anything in GLOB.new_player_list)
+		var/turf/player_turf = get_turf(lobby_player)
+		if(player_turf && is_turf_in_overmap_block(player_turf))
+			lobby_player.forceMove(pick(GLOB.newplayer_start))
+
+/// Whether this turf lies inside the overmap's block on the centcom z (edge included).
+/datum/controller/subsystem/overmap/proc/is_turf_in_overmap_block(turf/checked_turf)
+	if(checked_turf.z != OVERMAP_Z_LEVEL)
+		return FALSE
+	return checked_turf.x >= OVERMAP_LEFT_SIDE_COORD && checked_turf.x <= OVERMAP_RIGHT_SIDE_COORD && checked_turf.y >= OVERMAP_SOUTH_SIDE_COORD && checked_turf.y <= OVERMAP_NORTH_SIDE_COORD
+
 /datum/controller/subsystem/overmap/proc/setup_sun()
 	var/turf/open/overmap/centre_tile = overmap_centre
 	if(!istype(centre_tile))
@@ -154,8 +557,10 @@ SUBSYSTEM_DEF(overmap)
 		message_admins("Overmap failed to generate the map, this is a critical error.")
 		CRASH("Overmap did not generate correctly!")
 
-	var/obj/structure/overmap/star/big/star_to_spawn = pick(/obj/structure/overmap/star/big, /obj/structure/overmap/star/big/binary)
-	star_to_spawn = new
+	// Instantiate the PICKED type - a bare `new` here builds the declared type instead
+	// and the binary system could never roll
+	var/star_to_spawn_type = pick(/obj/structure/overmap/star/big, /obj/structure/overmap/star/big/binary)
+	var/obj/structure/overmap/star/big/star_to_spawn = new star_to_spawn_type
 	star_to_spawn.forceMove(centre_tile)
 
 	var/list/unsorted_turfs = get_area_turfs(/area/overmap, target_z = OVERMAP_Z_LEVEL)
@@ -242,55 +647,347 @@ SUBSYSTEM_DEF(overmap)
 	return turf_to_return
 
 
+/**
+ * Seeds the round's overmap hazards.
+ *
+ * Same two phases as before - every type in overmap_event_guaranteed_list is dealt a
+ * cluster so the chart always carries the full roster, then the rest of the budget comes
+ * off the weighted pick list. What changed is the shape and the sharing:
+ *
+ * - a cluster grows outward from one seed tile (grow_event_cluster) instead of being
+ *   smeared along a whole orbit, so hazards are blobs with clear space around them
+ * - clusters are dealt to the three zone bands in turn while they have room; once a
+ *   smaller band fills, the remaining budget goes to the bands that still have space
+ * - no orbit may pass OVERMAP_RING_MAX_EVENT_FRACTION
+ * - connected travel lanes stay clear of hazards, so adjacent clusters cannot seal off
+ *   travel between the zone bands or around the star
+ *
+ * MAX_OVERMAP_EVENT_CLUSTERS, MAX_OVERMAP_EVENTS and the MIN_OVERMAP_ASTEROID_FIELDS
+ * top-up all keep their old meaning. The zone rings themselves are untouched: green,
+ * yellow and red are still the same static concentric bands.
+ */
 /datum/controller/subsystem/overmap/proc/setup_dangers()
-	var/list/orbits = list()
-	for (var/i in 2 to LAZYLEN(radius_tiles))
-		orbits += "[i]"
+	var/list/zone_bands = list(ZONE_GREEN, ZONE_YELLOW, ZONE_RED)
+	var/list/band_names = list(
+		"[ZONE_GREEN]" = ZONE_NAME_GREEN,
+		"[ZONE_YELLOW]" = ZONE_NAME_YELLOW,
+		"[ZONE_RED]" = ZONE_NAME_RED,
+	)
 
-	// Phase 1: Spawn guaranteed event types first to ensure map diversity
-	var/list/guaranteed_events = GLOB.overmap_event_guaranteed_list.Copy()
-	for (var/event_type in guaranteed_events)
-		if (MAX_OVERMAP_EVENTS <= LAZYLEN(events))
+	// Seed pools, one per band. Built off radius_tiles, so the sun's own tile and the map
+	// edge are already excluded and orbit 1 - the tiles hugging the star - stays clear
+	// exactly as it did before.
+	var/list/band_seed_pools = list()
+	// Per-band bookkeeping and the per-orbit density budget, all keyed by number as text
+	var/list/ring_event_counts = list()
+	var/list/band_cluster_counts = list()
+	var/list/band_tile_counts = list()
+	var/list/band_type_tallies = list()
+	for(var/band in zone_bands)
+		band_seed_pools["[band]"] = list()
+		band_cluster_counts["[band]"] = 0
+		band_tile_counts["[band]"] = 0
+		band_type_tallies["[band]"] = list()
+	for(var/ring in 2 to LAZYLEN(radius_tiles))
+		for(var/turf/ring_turf as anything in radius_tiles[ring])
+			band_seed_pools["[get_zone_band_for_turf(ring_turf)]"] += ring_turf
+
+	// Tracks landable meteor storm / asteroid field events spawned below (seed tiles and
+	// cluster tiles alike), so we can top up to MIN_OVERMAP_ASTEROID_FIELDS afterward.
+	// This is the mining-content guarantee that used to target space ruin asteroid
+	// signals (MIN_OVERMAP_ASTEROID_SIGNALS) before that category was retired.
+	var/meteor_count = 0
+	// Counted here rather than off the `events` list, which nothing has ever filled -
+	// MAX_OVERMAP_EVENTS was silently inert, and ring-wide spread ran uncapped because of it
+	var/total_event_tiles = 0
+	var/clusters_spawned = 0
+
+	// Phase 1: one cluster of every guaranteed event type, dealt round-robin over the three
+	// bands so the roster spreads out instead of piling into whichever orbit rolled first
+	var/list/band_rotation = shuffle(zone_bands.Copy())
+	var/rotation_index = 0
+	for(var/event_type in shuffle(GLOB.overmap_event_guaranteed_list.Copy()))
+		if(clusters_spawned >= MAX_OVERMAP_EVENT_CLUSTERS || total_event_tiles >= MAX_OVERMAP_EVENTS)
 			break
-		if (LAZYLEN(orbits) == 0 || !orbits)
+		rotation_index++
+		// Its own band first, then the others: a guaranteed type still has to land somewhere
+		// even when its turn comes up on a band with no room left
+		var/list/band_order = list(band_rotation[((rotation_index - 1) % length(band_rotation)) + 1])
+		band_order |= band_rotation
+		var/list/placed = place_event_cluster(event_type, band_order, band_seed_pools, ring_event_counts)
+		if(!length(placed))
+			continue
+		clusters_spawned++
+		total_event_tiles += length(placed)
+		meteor_count += tally_event_cluster(placed, band_cluster_counts, band_tile_counts, band_type_tallies)
+
+	// Phase 2: spend the rest of the budget on weighted picks, always topping up whichever
+	// open band has the fewest clusters. Full bands drop out so the larger bands can fill.
+	var/list/open_bands = zone_bands.Copy()
+	while(clusters_spawned < MAX_OVERMAP_EVENT_CLUSTERS && total_event_tiles < MAX_OVERMAP_EVENTS && length(open_bands))
+		var/band = least_stocked_band(open_bands, band_cluster_counts)
+		var/event_type = pick_weight(weighted_types_for_band(band_type_tallies["[band]"]))
+		var/list/placed = place_event_cluster(event_type, list(band), band_seed_pools, ring_event_counts)
+		if(!length(placed))
+			open_bands -= band // nothing left in this band a cluster is allowed to occupy
+			continue
+		clusters_spawned++
+		total_event_tiles += length(placed)
+		meteor_count += tally_event_cluster(placed, band_cluster_counts, band_tile_counts, band_type_tallies)
+
+	// Guarantee a minimum number of landable asteroid field events per round, so space
+	// mining is a dependable resource loop rather than a lucky roll of the weighted picker
+	var/list/asteroid_seed_pool = list()
+	for(var/band in zone_bands)
+		asteroid_seed_pool |= band_seed_pools["[band]"]
+	while (meteor_count < MIN_OVERMAP_ASTEROID_FIELDS)
+		var/turf/turf_for_field = pick_cluster_seed(asteroid_seed_pool, ring_event_counts)
+		if (!turf_for_field || !claim_event_tile(turf_for_field, ring_event_counts))
 			break
-		var/selected_orbit = text2num(pick(orbits))
+		var/obj/structure/overmap/event/meteor/field = new(turf_for_field)
+		meteor_count += tally_event_cluster(list(field), band_cluster_counts, band_tile_counts, band_type_tallies)
+		clusters_spawned++
+		total_event_tiles++
+		log_mapping("SSovermap: Spawned guaranteed asteroid field event")
 
-		var/turf/turf_for_event = get_unused_overmap_square_in_radius(selected_orbit)
-		if (!turf_for_event || !istype(turf_for_event))
-			orbits -= "[selected_orbit]"
+	// One line per band, so a live boot's hazard spread can be read straight out of dd.log
+	for(var/band in zone_bands)
+		var/list/tally = band_type_tallies["[band]"]
+		var/list/parts = list()
+		for(var/event_path in tally)
+			var/obj/structure/overmap/event/event_prototype = event_path
+			parts += "[initial(event_prototype.name)] x[tally[event_path]]"
+		log_mapping("SSovermap: hazards in the [band_names["[band]"]] - [band_cluster_counts["[band]"]] clusters, [band_tile_counts["[band]"]] tiles ([length(parts) ? jointext(parts, ", ") : "none"])")
+	log_mapping("SSovermap: hazard seeding done - [clusters_spawned]/[MAX_OVERMAP_EVENT_CLUSTERS] clusters, [total_event_tiles]/[MAX_OVERMAP_EVENTS] tiles, [meteor_count] landable asteroid fields")
+
+/**
+ * Seeds one cluster, trying each band in band_order until one has room for it.
+ *
+ * Returns everything the cluster placed, seed first, or an empty list if no band could
+ * take it. band_order lets a guaranteed type fall back to another band rather than being
+ * dropped from the round entirely.
+ */
+/datum/controller/subsystem/overmap/proc/place_event_cluster(event_type, list/band_order, list/band_seed_pools, list/ring_event_counts)
+	for(var/band in band_order)
+		var/turf/seed_turf = pick_cluster_seed(band_seed_pools["[band]"], ring_event_counts)
+		if(!seed_turf)
 			continue
-		var/obj/structure/overmap/event/event_to_spawn = new event_type(turf_for_event)
-		for (var/turf/turf_to_spawn as anything in radius_tiles[selected_orbit])
-			if (locate(/obj/structure/overmap) in turf_to_spawn)
-				continue
-			if (!prob(event_to_spawn.spread_chance))
-				continue
-			new event_type(turf_to_spawn)
+		var/list/placed = grow_event_cluster(seed_turf, event_type, ring_event_counts)
+		if(length(placed))
+			return placed
+	return list()
 
-	// Phase 2: Fill remaining clusters with weighted random picks
-	var/clusters_spawned = length(GLOB.overmap_event_guaranteed_list)
-	for (var/_ in clusters_spawned to MAX_OVERMAP_EVENT_CLUSTERS)
-		if (MAX_OVERMAP_EVENTS <= LAZYLEN(events))
-			return
-		if (LAZYLEN(orbits) == 0 || !orbits)
-			break // can't fit anymore in
-		var/selected_orbit = text2num(pick(orbits))
+/**
+ * Grows one hazard cluster outward from a seed tile. Returns everything placed, seed first;
+ * an empty list means the seed tile itself could not be claimed.
+ *
+ * The walk is breadth-first over the eight neighbours of every tile already in the cluster,
+ * and the chance to take a neighbour is the event's spread_chance decayed once per step out
+ * from the seed. Growth stops at the type's max_cluster_size, at OVERMAP_CLUSTER_MAX_RADIUS,
+ * at OVERMAP_CLUSTER_MAX_ARC around the sun from the seed's bearing, or when the orbit a
+ * tile sits on has already been filled to OVERMAP_RING_MAX_EVENT_FRACTION - first to bite.
+ */
+/datum/controller/subsystem/overmap/proc/grow_event_cluster(turf/seed_turf, event_type, list/ring_event_counts)
+	var/list/placed = list()
+	if(!ispath(event_type, /obj/structure/overmap/event))
+		return placed
+	if(!claim_event_tile(seed_turf, ring_event_counts))
+		return placed
 
-		var/turf/turf_for_event = get_unused_overmap_square_in_radius(selected_orbit)
-		if (!turf_for_event || !istype(turf_for_event))
-			orbits -= "[selected_orbit]" // this one is full
+	var/obj/structure/overmap/event/seed_event = new event_type(seed_turf)
+	placed += seed_event
+
+	var/max_tiles = max(1, seed_event.max_cluster_size)
+	var/base_chance = seed_event.spread_chance
+	if(length(placed) >= max_tiles || base_chance <= 0)
+		return placed
+
+	var/seed_bearing = get_bearing_for_turf(seed_turf)
+	var/list/frontier = list(seed_turf)
+	var/list/frontier_depth = list(0)
+	// Every tile the walk has already ruled on, so a neighbour it turned down is not
+	// rolled again from the next tile over
+	var/list/considered = list(seed_turf)
+
+	while(length(frontier) && length(placed) < max_tiles)
+		var/frontier_index = rand(1, length(frontier))
+		var/turf/current = frontier[frontier_index]
+		var/depth = frontier_depth[frontier_index]
+		frontier.Cut(frontier_index, frontier_index + 1)
+		frontier_depth.Cut(frontier_index, frontier_index + 1)
+		if(depth >= OVERMAP_CLUSTER_MAX_RADIUS)
 			continue
-		var/event_type = pick_weight(GLOB.overmap_event_pick_list)
-		var/obj/structure/overmap/event/event_to_spawn = new event_type(turf_for_event)
-		for (var/turf/turf_to_spawn as anything in radius_tiles[selected_orbit])
-			if (locate(/obj/structure/overmap) in turf_to_spawn)
-				continue
-			if (!prob(event_to_spawn.spread_chance))
-				continue
-			new event_type(turf_to_spawn)
 
+		var/step_chance = base_chance
+		for(var/_ in 1 to depth)
+			step_chance *= OVERMAP_CLUSTER_SPREAD_DECAY
+
+		for(var/direction in GLOB.alldirs)
+			if(length(placed) >= max_tiles)
+				break
+			var/turf/candidate = get_step(current, direction)
+			if(!candidate || (candidate in considered))
+				continue
+			considered += candidate
+			if(!prob(step_chance))
+				continue
+			if(!within_cluster_arc(candidate, seed_bearing))
+				continue
+			if(!claim_event_tile(candidate, ring_event_counts))
+				continue
+			placed += new event_type(candidate)
+			frontier += candidate
+			frontier_depth += (depth + 1)
+
+	return placed
+
+/// A free tile in this band's pool whose orbit still has room under the density cap.
+/datum/controller/subsystem/overmap/proc/pick_cluster_seed(list/pool, list/ring_event_counts)
+	// Remove every tried tile: occupied tiles and capped orbits cannot become available
+	// during seeding. Exhaust the pool before declaring a band full; forty unlucky picks
+	// can otherwise discard a band with room left at the higher cluster density.
+	while(length(pool))
+		var/turf/candidate = pick_n_take(pool)
+		if(can_place_event_on(candidate, ring_event_counts))
+			return candidate
+	return null
+
+/// TRUE when a hazard may go here: the tile is empty, outside the travel lanes, and its
+/// orbit is not already as full as OVERMAP_RING_MAX_EVENT_FRACTION lets it get.
+/datum/controller/subsystem/overmap/proc/can_place_event_on(turf/candidate, list/ring_event_counts)
+	if(!istype(candidate, /turf/open/overmap))
+		return FALSE
+	if(is_overmap_travel_lane(candidate))
+		return FALSE
+	if(locate(/obj/structure/overmap) in candidate)
+		return FALSE
+	var/ring = get_ring_for_turf(candidate)
+	if(ring < 2 || ring > LAZYLEN(radius_tiles))
+		return FALSE
+	var/ring_size = LAZYLEN(radius_tiles[ring])
+	if(!ring_size)
+		return FALSE
+	return ring_event_counts["[ring]"] < max(1, round(ring_size * OVERMAP_RING_MAX_EVENT_FRACTION))
+
+/**
+ * Hazard-free routes through all three zone bands and around the star.
+ *
+ * Cardinal and diagonal spokes are three tiles wide. One-tile square loops every seven
+ * tiles join all eight spokes, including a route around the star itself. Square loops
+ * stay connected even for cardinal movement; diagonal spokes have room for the same.
+ * Both seeds and cluster growth use this reservation, including the mining top-up.
+ */
+/datum/controller/subsystem/overmap/proc/is_overmap_travel_lane(turf/candidate)
+	if(!candidate || !overmap_centre)
+		return FALSE
+	var/dx = abs(candidate.x - overmap_centre.x)
+	var/dy = abs(candidate.y - overmap_centre.y)
+	if(dx <= OVERMAP_TRAVEL_LANE_HALF_WIDTH || dy <= OVERMAP_TRAVEL_LANE_HALF_WIDTH)
+		return TRUE
+	if(abs(dx - dy) <= OVERMAP_TRAVEL_LANE_HALF_WIDTH)
+		return TRUE
+	return (max(dx, dy) % OVERMAP_TRAVEL_LANE_RING_SPACING) == 0
+
+/// can_place_event_on(), plus booking the tile against its orbit's budget.
+/datum/controller/subsystem/overmap/proc/claim_event_tile(turf/candidate, list/ring_event_counts)
+	if(!can_place_event_on(candidate, ring_event_counts))
+		return FALSE
+	ring_event_counts["[get_ring_for_turf(candidate)]"] += 1
+	return TRUE
+
+/// FALSE once a candidate sits more than half of OVERMAP_CLUSTER_MAX_ARC around the sun
+/// from where its cluster started, which is what stops a cluster curling into a ring.
+/datum/controller/subsystem/overmap/proc/within_cluster_arc(turf/candidate, seed_bearing)
+	var/bearing_delta = abs(get_bearing_for_turf(candidate) - seed_bearing)
+	if(bearing_delta > 180)
+		bearing_delta = 360 - bearing_delta
+	return bearing_delta <= (OVERMAP_CLUSTER_MAX_ARC * 0.5)
+
+/**
+ * The orbit (Chebyshev ring) a turf sits on, counted out from the sun.
+ *
+ * Deliberately the same arithmetic setup_sun() uses to build radius_tiles, one-tile offset
+ * included, so the ring budgets and radius_tiles agree on which tiles belong to which orbit.
+ */
+/datum/controller/subsystem/overmap/proc/get_ring_for_turf(turf/checked_turf)
+	if(!checked_turf || !overmap_centre)
+		return 0
+	return max(abs(checked_turf.x - (overmap_centre.x + 1)), abs(checked_turf.y - (overmap_centre.y + 1)))
+
+/// Bearing of a turf from the sun in degrees, 0-360. Used to hold a cluster inside one arc.
+/datum/controller/subsystem/overmap/proc/get_bearing_for_turf(turf/checked_turf)
+	if(!checked_turf || !overmap_centre)
+		return 0
+	return SIMPLIFY_DEGREES(ATAN2(checked_turf.x - overmap_centre.x, checked_turf.y - overmap_centre.y))
+
+/// The open band carrying the fewest clusters so far, ties broken at random.
+/datum/controller/subsystem/overmap/proc/least_stocked_band(list/candidate_bands, list/band_cluster_counts)
+	var/list/leaders = list()
+	var/lowest = null
+	for(var/band in candidate_bands)
+		var/count = band_cluster_counts["[band]"]
+		if(isnull(lowest) || count < lowest)
+			lowest = count
+			leaders = list(band)
+		else if(count == lowest)
+			leaders += band
+	return length(leaders) ? pick(leaders) : null
+
+/// The phase 2 pick list for one band: the stock weights, with a bonus on any event type
+/// the band has not been dealt yet, so variety evens out alongside cluster count.
+/datum/controller/subsystem/overmap/proc/weighted_types_for_band(list/band_tally)
+	var/list/weights = list()
+	for(var/event_type in GLOB.overmap_event_pick_list)
+		var/weight = GLOB.overmap_event_pick_list[event_type]
+		if(!band_tally[event_type])
+			weight *= OVERMAP_UNSEEN_TYPE_WEIGHT_BONUS
+		weights[event_type] = weight
+	return weights
+
+/**
+ * Books a finished cluster into the per-band tallies the boot log prints, and returns how
+ * many landable asteroid fields it contained.
+ *
+ * The cluster counts against the band its seed landed in, since that is what the parity
+ * check balances, but individual tiles are booked where they actually sit - a cluster near
+ * a band boundary is allowed to straddle it.
+ */
+/datum/controller/subsystem/overmap/proc/tally_event_cluster(list/placed, list/band_cluster_counts, list/band_tile_counts, list/band_type_tallies)
+	if(!length(placed))
+		return 0
+	var/meteors = 0
+	var/obj/structure/overmap/event/seed_event = placed[1]
+	band_cluster_counts["[get_zone_band_for_turf(get_turf(seed_event))]"] += 1
+	for(var/obj/structure/overmap/event/placed_event as anything in placed)
+		var/tile_band_key = "[get_zone_band_for_turf(get_turf(placed_event))]"
+		band_tile_counts[tile_band_key] += 1
+		var/list/tally = band_type_tallies[tile_band_key]
+		tally[placed_event.type] += 1
+		if(istype(placed_event, /obj/structure/overmap/event/meteor))
+			meteors++
+	return meteors
+
+/**
+ * Places the round's planets on the overmap.
+ *
+ * Two supply models feed this. Anything SSmapping preloaded (the *_planet_count knobs
+ * in _mapping.dm) already owns a generated z-level pair at boot and only needs a marker
+ * wired to it. Every other planet type spawns as DYNAMIC markers: overmap contacts
+ * with no interior at all - no map zone, no z-level, no docks - whose surface is
+ * generated the first time a ship docks or a survey shuttle maps it
+ * (planet/load_level() -> spawn_dynamic_encounter()).
+ *
+ * An unvisited dynamic planet costs nothing but its overmap tile, which is why the
+ * preloaded counts are all zero: each of those is a full 255x255 z-pair sitting in
+ * memory whether or not anyone ever goes there. It is also why the round's planet count
+ * (dynamic_planets_per_type, one set of every type per pass) is free to be larger than
+ * anything a round will actually visit - none of it is generated until somebody flies there.
+ */
 /datum/controller/subsystem/overmap/proc/setup_planets()
+	if(!spawn_planets)
+		log_mapping("SSovermap: planets disabled (spawn_planets = FALSE) - no planet contacts this round")
+		return
+
 	// Init planets
 	var/list/planets = SSmapping.planets
 	if(!planets)
@@ -301,78 +998,134 @@ SUBSYSTEM_DEF(overmap)
 		orbits += "[i]"
 
 	for (var/planet in planets)
-		if (LAZYLEN(orbits) == 0 || !orbits)
-			break // can't fit anymore in
-		var/selected_orbit = text2num(pick(orbits))
-
-		var/turf/turf_for_planet = get_unused_overmap_square_in_radius(selected_orbit)
-		if (!turf_for_planet || !istype(turf_for_planet))
-			orbits -= "[selected_orbit]" // this one is full
-			continue
+		var/turf/turf_for_planet
+		// Roundstart planets pre-rolled a zone band before their terrain generated
+		// (SSmapping.next_planet_zone_band()), place them inside that band so the
+		// zone-scaled mobs/weather they were built with match their overmap tile
+		var/wanted_band = planets[planet]["zone_band"]
+		if(wanted_band)
+			turf_for_planet = get_unused_overmap_square_in_zone_band(wanted_band, tries = 80) // red band is ~9% of tiles, needs generous sampling
+			if(!turf_for_planet)
+				log_mapping("SSovermap: Failed to place planet '[planet]' in its assigned zone band [wanted_band], falling back to any orbit")
+		if(!turf_for_planet) // fallback: legacy random-orbit placement
+			if (LAZYLEN(orbits) == 0 || !orbits)
+				break // can't fit anymore in
+			var/selected_orbit = text2num(pick(orbits))
+			turf_for_planet = get_unused_overmap_square_in_radius(selected_orbit)
+			if (!turf_for_planet || !istype(turf_for_planet))
+				orbits -= "[selected_orbit]" // this one is full
+				continue
 		var/datum/overmap/planet/planet_type = planets[planet]["type"]
 		var/obj/structure/overmap/planet/planet_to_spawn = new
 		planet_to_spawn.planet = planet_type
+		// Roundstart planets are static: their z-pair was generated once during SSmapping
+		// init and can never be rebuilt, so no unload path may ever clear it
+		planet_to_spawn.preserve_level = TRUE
 		planet_to_spawn.forceMove(turf_for_planet)
 
 		// Transfer all of the data from the planet datum onto the planet object
-		var/datum/overmap/planet/planet_info = new planet_to_spawn.planet
-		planet_to_spawn.name = planet_info.name
-		planet_to_spawn.desc = planet_info.desc
-		planet_to_spawn.icon_state = planet_info.icon_state
-		planet_to_spawn.color = planet_info.color
-		qdel(planet_info)
+		planet_to_spawn.apply_planet_identity()
 
-		var/datum/map_zone/mapzone = find_free_mapzone()
+		// Roundstart planets own a whole level each and MUST NOT be packed: their z-level was
+		// generated at boot by SSmapping's own loadWorld() pass, at full 255x255 size, and
+		// nothing here narrows it or could re-lay it inside a lattice cell. A biome class
+		// would deal them a 123x123 slot rectangle over ground that was generated for the
+		// whole level, and - worse - hand the SECOND same-biome roundstart planet slot 2 of
+		// the FIRST one's z-level while its own pre-generated level went unregistered.
+		// MAP_TENANT_CLASS_SOLO is a whole-level, capacity-1 slot: byte-for-byte the
+		// allocation these have always had. They still go through the register so the zone
+		// pool stays one pool.
+		var/datum/map_footprint/footprint = claim_free_slot(MAP_TENANT_CLASS_SOLO, planet_to_spawn, zone_name = "Dynamic Overmap Encounter")
+		if(isnull(footprint))
+			log_mapping("SSovermap: could not claim a slot for roundstart planet '[planet]' - skipped")
+			continue
+		var/datum/map_zone/mapzone = footprint.zone
 		var/datum/space_level/zlevel
-		var/encounter_name = "Dynamic Overmap Encounter"
-		if(isnull(mapzone))
-			mapzone = create_map_zone(encounter_name)
+		// length() guard - indexing an empty z_levels list runtimes (see
+		// spawn_dynamic_encounter for the round-killing version of this mistake)
+		if(length(mapzone.z_levels))
+			zlevel = mapzone.z_levels[1]
+		else
 			zlevel = SSmapping.get_level(planets[planet]["z"])
 			mapzone.add_space_level(zlevel)
-		else
-			if(mapzone.z_levels[1])
-				zlevel = mapzone.z_levels[1]
-			else
-				zlevel = SSmapping.get_level(planets[planet]["z"])
-				mapzone.add_space_level(zlevel)
+		footprint.enable_planetary_faction()
+		footprint.attach_level(zlevel)
+		// These mobs were initialized while SSmapping loaded the roundstart surface, before
+		// its overmap marker and footprint existed. Adopt them now, preserving role factions.
+		footprint.add_planetary_faction_to_existing_mobs()
 
-		mapzone.taken = TRUE
 		planet_to_spawn.mapzone = mapzone
+		planet_to_spawn.footprint = footprint
 		planet_to_spawn.loaded = TRUE
 
-	// Midgame planets
-	// var/list/datum/overmap/planet/midgame_planets = list()
-	// for(var/datum/overmap/planet/planet_type as anything in subtypesof(/datum/overmap/planet))
-	// 	if(initial(planet_type.spawn_rate) > 0)
-	// 		midgame_planets += planet_type
+	// Dynamic planets: dynamic_planets_per_type markers of every planet type SSmapping did
+	// not preload. They are full overmap contacts - named, charted, scannable - with no
+	// interior at all until someone visits. Bands come from the same shuffled pool the
+	// preloaded planets draw from, so the first three cover green, yellow and red instead
+	// of every planet piling into the safe outer ring.
+	var/list/preloaded_types = list()
+	for(var/planet_key in planets)
+		preloaded_types |= planets[planet_key]["type"]
 
+	var/list/dynamic_planet_markers = list(
+		/obj/structure/overmap/planet/lava,
+		/obj/structure/overmap/planet/ice,
+		/obj/structure/overmap/planet/jungle,
+		/obj/structure/overmap/planet/beach,
+		/obj/structure/overmap/planet/wasteland,
+	)
+	for(var/obj/structure/overmap/planet/marker_type as anything in dynamic_planet_markers.Copy())
+		if(initial(marker_type.planet) in preloaded_types)
+			dynamic_planet_markers -= marker_type
 
-	// var/list/midgame_orbits = list()
-	// for (var/i in 2 to LAZYLEN(radius_tiles))
-	// 	midgame_orbits += "[i]"
+	// One full set of types per pass, rather than all the lava planets and then all the
+	// ice ones. The first pass is what the lobby pre-build generates, so it has to be the
+	// pass that covers every type, and dealing bands in this order keeps each type's
+	// planets spread across green/yellow/red instead of clustered in one ring.
+	for(var/pass in 1 to max(dynamic_planets_per_type, 1))
+		for(var/obj/structure/overmap/planet/marker_type as anything in dynamic_planet_markers)
+			spawn_dynamic_planet(marker_type, pass)
 
-	// for (var/_ in 1 to MAX_OVERMAP_PLANETS_TO_SPAWN)
-	// 	if (LAZYLEN(midgame_orbits) == 0 || !midgame_orbits)
-	// 		break // can't fit anymore in
-	// 	var/selected_orbit = text2num(pick(midgame_orbits))
+/**
+ * Places one unloaded planet contact on the overmap.
+ *
+ * * marker_type - the /obj/structure/overmap/planet subtype to place.
+ * * pass - which round of one-per-type this is. Pass 1 is generated during the lobby;
+ *   later passes are numbered in the contact's name and build on first visit.
+ */
+/datum/controller/subsystem/overmap/proc/spawn_dynamic_planet(obj/structure/overmap/planet/marker_type, pass = 1)
+	var/wanted_band = SSmapping.next_planet_zone_band()
+	var/turf/turf_for_planet = get_unused_overmap_square_in_zone_band(wanted_band, tries = 80) // red band is ~9% of tiles, needs generous sampling
+	if(!turf_for_planet)
+		log_mapping("SSovermap: Failed to place dynamic planet [marker_type] in zone band [wanted_band], falling back to any free square")
+		turf_for_planet = get_unused_overmap_square()
+	if(!turf_for_planet)
+		log_mapping("SSovermap: Failed to place dynamic planet [marker_type] - no free overmap square")
+		return
+	var/obj/structure/overmap/planet/planet_to_spawn = new marker_type(turf_for_planet)
+	// Remembered rather than re-derived, so the planet keeps its difficulty when it
+	// relocates after being abandoned
+	planet_to_spawn.zone_band = wanted_band
+	// Several planets of a type in one round would otherwise be several identical
+	// contacts on the chart, with no way to say which one a mission or a helm order
+	// meant. Set before the identity copy, which is what stamps it onto the name.
+	if(dynamic_planets_per_type > 1)
+		planet_to_spawn.designation = planet_designation(pass)
 
-	// 	var/turf/turf_for_planet = get_unused_overmap_square_in_radius(selected_orbit)
-	// 	if (!turf_for_planet || !istype(turf_for_planet))
-	// 		midgame_orbits -= "[selected_orbit]" // this one is full
-	// 		continue
+	// Copy the planet datum's identity onto the marker now, rather than waiting on
+	// Initialize(), so the contact is never briefly a nameless "weak energy signature".
+	// Redundant since SSovermap gained its SSatoms dependency (Initialize() runs on the
+	// spot now), but kept because it is what makes the designation suffix survive - see
+	// apply_planet_identity().
+	planet_to_spawn.apply_planet_identity()
 
-	// 	var/datum/overmap/planet/planet_type = pick(midgame_planets)
-	// 	var/obj/structure/overmap/planet/planet_to_spawn = new
-	// 	planet_to_spawn.planet = planet_type
-	// 	planet_to_spawn.forceMove(turf_for_planet)
+	log_mapping("SSovermap: Spawned dynamic planet '[planet_to_spawn.name]' (unloaded) in zone band [wanted_band] at ([turf_for_planet.x], [turf_for_planet.y])")
 
-	// 	// Transfer all of the data from the planet datum onto the planet object
-	// 	var/datum/overmap/planet/planet_info = new planet_to_spawn.planet
-	// 	planet_to_spawn.name = planet_info.name
-	// 	planet_to_spawn.desc = planet_info.desc
-	// 	planet_to_spawn.icon_state = planet_info.icon_state
-	// 	planet_to_spawn.color = planet_info.color
-	// 	qdel(planet_info)
+/// Roman numeral for a planet's place in its type, so the chart reads "Lava Planet II"
+/// rather than a second "Lava Planet".
+/datum/controller/subsystem/overmap/proc/planet_designation(index)
+	var/static/list/numerals = list("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X")
+	return (index >= 1 && index <= length(numerals)) ? numerals[index] : "[index]"
 
 // TODO - MULTI-Z VLEVELS
 /datum/controller/subsystem/overmap/proc/calculate_turf_above(turf/T)
@@ -457,12 +1210,66 @@ SUBSYSTEM_DEF(overmap)
 
 		log_mapping("SSovermap: Spawned space ruin '[selected_ruin.name]' at orbit [selected_orbit]")
 
+	// Asteroid mining no longer has a guarantee here - space ruin signals retired the
+	// "asteroid" category entirely. The equivalent guarantee (MIN_OVERMAP_ASTEROID_FIELDS)
+	// now targets landable meteor storm field events instead; see setup_dangers().
 	log_mapping("SSovermap: Finished spawning [length(used_ruins)] space ruins")
 
 /**
- * Spawns all ships defined in roundstart_ship_templates.
- * The first successfully spawned ship becomes initial_ship (backward compat).
- * All spawned ships are tracked in initial_ships.
+ * Returns the zone band (ZONE_RED/YELLOW/GREEN) a turf falls in, computed from
+ * distance to the sun. Mirrors SSovermap_zones.calculate_zone_for_turf(), which
+ * can't be used here because SSovermap_zones initializes after SSovermap.
+ * Zones are static concentric rings, so the distance math is the ground truth.
+ */
+/datum/controller/subsystem/overmap/proc/get_zone_band_for_turf(turf/T)
+	if(!T || !overmap_centre)
+		return ZONE_GREEN
+	var/max_radius = (OVERMAP_SIZE - 1) / 2
+	var/dx = T.x - overmap_centre.x
+	var/dy = T.y - overmap_centre.y
+	var/normalized = sqrt(dx * dx + dy * dy) / max_radius
+	if(normalized < ZONE_INNER_RING_RATIO)
+		return ZONE_RED
+	if(normalized < ZONE_MIDDLE_RING_RATIO)
+		return ZONE_YELLOW
+	return ZONE_GREEN
+
+/**
+ * Places one trader outpost per zone band (black market deep, outfitter mid,
+ * general store in the safe outer ring). Outposts are permanent and never move.
+ */
+/datum/controller/subsystem/overmap/proc/setup_trader_outposts()
+	var/list/wanted = list(
+		"[ZONE_RED]" = /obj/structure/overmap/trader_outpost/black_market,
+		"[ZONE_YELLOW]" = /obj/structure/overmap/trader_outpost/outfitter,
+		"[ZONE_GREEN]" = /obj/structure/overmap/trader_outpost/general,
+	)
+
+	for(var/_ in 1 to MAX_OUTPOST_PLACEMENT_ATTEMPTS)
+		if(!length(wanted))
+			break
+		var/turf/candidate = get_unused_overmap_square()
+		if(!candidate)
+			continue
+		var/band = "[get_zone_band_for_turf(candidate)]"
+		var/outpost_type = wanted[band]
+		if(!outpost_type)
+			continue
+		var/obj/structure/overmap/trader_outpost/outpost = new outpost_type(candidate)
+		outpost.load_level() // pre-load interior at init instead of on first dock
+		wanted -= band
+		log_mapping("SSovermap: Spawned trader outpost '[outpost.name]' in zone band [band] at ([candidate.x], [candidate.y])")
+
+	for(var/band in wanted)
+		log_mapping("SSovermap: WARNING - failed to place a trader outpost in zone band [band]")
+
+/**
+ * Spawns the ship the round is anchored on.
+ *
+ * Only one hull spawns here. Fleet size follows turnout, and nobody has readied up
+ * yet at SSovermap init - the rest of the fleet is spawned by scale_roundstart_fleet()
+ * once SSticker knows how many players it has. This one still has to exist now, since
+ * it carries the observer_start landmark pre-round ghosts spawn on.
  */
 /datum/controller/subsystem/overmap/proc/spawn_initial_ship()
 #ifdef UNIT_TESTS
@@ -477,22 +1284,80 @@ SUBSYSTEM_DEF(overmap)
 		else
 			log_mapping("[src] failed to load ship [templates].")
 #else
-	if(!length(roundstart_ship_templates))
-		CRASH("No roundstart ship templates configured.")
+	if(!spawn_roundstart_hull())
+		CRASH("Failed to spawn any roundstart ships.")
+#endif
 
-	for(var/ship_type in roundstart_ship_templates)
-		var/obj/structure/overmap/ship/spawned = SSshuttle.create_ship(ship_type)
-		if(!spawned)
-			stack_trace("Failed to spawn roundstart ship: [ship_type]")
-			continue
+/**
+ * Rolls and spawns one free hull: a random modular hull, a random theme on it,
+ * and a random module in every one of its upgrade slots.
+ *
+ * Costs are ignored throughout - nobody is paying for these. Hull classes are drawn
+ * without replacement while the pool lasts, so a three-ship round is three different
+ * classes rather than three Scarabs.
+ *
+ * Arguments:
+ * * track_as_initial - TRUE for the roundstart fleet, which SSticker deals crews into
+ * and which reports its own losses to admins. FALSE for hulls requisitioned mid-round
+ * from the join menu: those are ordinary player ships from the moment they exist, and
+ * counting them as roundstart hulls would make the fleet look like it never shrank.
+ *
+ * Returns the spawned ship, or null on failure.
+ */
+/datum/controller/subsystem/overmap/proc/spawn_free_hull(track_as_initial = TRUE)
+	var/list/pool = get_roundstart_hull_templates()
+	if(!length(pool))
+		CRASH("No modular hulls are eligible to spawn for free.")
+
+	var/list/unused = pool - spent_roundstart_hulls
+	var/datum/map_template/shuttle/voidcrew/hull = pick(length(unused) ? unused : pool)
+
+	var/datum/ship_theme/theme = roll_random_ship_theme(hull.type)
+	var/list/selections = roll_random_upgrade_selections(hull, theme)
+
+	// Pass the type path, not the catalog instance: create_ship rewrites suffix and
+	// mappath on whatever template object it's handed
+	var/obj/structure/overmap/ship/spawned = SSshuttle.create_ship(hull.type, selections, theme)
+	if(!spawned)
+		stack_trace("Failed to spawn free hull: [hull.type]")
+		return null
+
+	spent_roundstart_hulls += hull
+	if(track_as_initial)
 		initial_ships += spawned
+		if(!initial_ship)
+			initial_ship = spawned
 		RegisterSignal(spawned, COMSIG_QDELETING, PROC_REF(handle_initial_ship_deletion))
 
-	if(!length(initial_ships))
-		CRASH("Failed to spawn any roundstart ships.")
+	var/list/rolled = list()
+	for(var/slot_key in selections)
+		var/datum/ship_upgrade_module/module = selections[slot_key]
+		rolled += "[slot_key]=[module.id]"
+	log_mapping("SSovermap: free hull [hull.name] spawned as '[spawned.name]' \
+		(theme: [theme?.id || "none"], modules: [length(rolled) ? rolled.Join(", ") : "defaults"], \
+		[track_as_initial ? "roundstart fleet" : "requisitioned"])")
 
-	initial_ship = initial_ships[1]
-#endif
+	return spawned
+
+/// One hull for the roundstart fleet. See spawn_free_hull().
+/datum/controller/subsystem/overmap/proc/spawn_roundstart_hull()
+	return spawn_free_hull(track_as_initial = TRUE)
+
+/**
+ * Grows the roundstart fleet to match how many players actually readied up.
+ *
+ * Called from SSticker.create_characters() before anyone is assigned a job, so the
+ * hulls exist by the time crews are dealt out. Never shrinks the fleet.
+ *
+ * Returns the number of hulls in the fleet.
+ */
+/datum/controller/subsystem/overmap/proc/scale_roundstart_fleet(ready_count)
+	var/wanted = clamp(CEILING(ready_count / roundstart_crew_per_ship, 1), 1, roundstart_max_ships)
+	while(length(initial_ships) < wanted)
+		if(!spawn_roundstart_hull())
+			break
+	log_mapping("SSovermap: roundstart fleet scaled to [length(initial_ships)] hull(s) for [ready_count] ready player(s) (wanted [wanted]).")
+	return length(initial_ships)
 
 /datum/controller/subsystem/overmap/proc/handle_initial_ship_deletion(datum/source)
 	SIGNAL_HANDLER
@@ -536,22 +1401,56 @@ SUBSYSTEM_DEF(overmap)
 		if (ZTRAIT_WASTELAND_RUINS)
 			return SSmapping.wasteland_ruins_templates
 
-/datum/controller/subsystem/overmap/proc/spawn_dynamic_encounter(datum/overmap/planet/planet_type, ruin = TRUE, ignore_cooldown = FALSE, datum/map_template/ruin/ruin_type)
+/**
+ * Builds a single-z dynamic encounter level: map zone, area fill, optional ruin,
+ * optional mapgen terrain, docking ports. Arguments beyond the historical ones:
+ * * zone_band - overmap difficulty band the terrain scales to, if any.
+ * * throttled - TRUE when the caller already holds the worldgen queue (the large
+ *   asteroid's cave level): the build shares that job's tick budget. FALSE (default)
+ *   for unqueued flat encounters, which run at plain CHECK_TICK speed and never wait
+ *   behind a queued job - see worldgen_queue.dm.
+ * * tenant_class - which slot class to claim. Null lets the encounter pick for itself:
+ *   MAP_TENANT_CLASS_FLAT (four to a level) when it is genuinely flat, MAP_TENANT_CLASS_SOLO
+ *   when it needs a whole level - it carries a map generator, publishes a ZTRAIT_BASETURF,
+ *   or its ruin template is too big for a 123x123 slot. Player outposts pass OUTPOST.
+ * * tenant_owner - the overmap object the footprint belongs to, if the caller has it.
+ *
+ * Returns list(mapzone, primary_dock, secondary_dock, footprint, ruin_bottom_left).
+ * Callers MUST hold onto the footprint: it is what their teardown hands back, and what
+ * every "is this turf mine" question is answered from. The fifth entry is where the ruin
+ * template was stamped (null when there was no ruin, or it did not fit).
+ */
+/datum/controller/subsystem/overmap/proc/spawn_dynamic_encounter(datum/overmap/planet/planet_type, ruin = TRUE, ignore_cooldown = FALSE, datum/map_template/ruin/ruin_type, zone_band, throttled = FALSE, tenant_class = null, atom/tenant_owner = null)
 	log_shuttle("SSOVERMAP: SPAWNING DYNAMIC ENCOUNTER STARTED")
 	var/list/ruin_list
 	var/datum/map_generator/mapgen
 	var/area/target_area
-	var/datum/weather/weather_controller_type
 	var/weather_trait
+	var/turf/ground_baseturf
 	var/datum/planet/planet_template
+	/// TRUE only for actual planetary surfaces. Crashed ships and space ruins deliberately
+	/// keep their normal faction conflicts even when they also occupy a footprint.
+	var/has_planetary_surface = FALSE
+	/// Where the ruin template was actually stamped, handed back to the caller as the
+	/// fifth return value - space ruins scope their mission spawns and interior sweeps
+	/// off it and would otherwise have to guess at the placer's arithmetic.
+	var/turf/ruin_bottom_left
 	if(!isnull(planet_type))
 		planet_type = new planet_type
 		ruin_list = get_ruin_list(planet_type.ruin_type)
 		if(!isnull(planet_type.mapgen))
 			mapgen = new planet_type.mapgen
+			// Unqueued callers (empty space, weak signals) must never crawl behind a
+			// queued planet job's tick budget - see worldgen_yield() in
+			// worldgen_queue.dm. Callers that already hold the queue (throttled = TRUE)
+			// keep the generator's budget instead.
+			if(!throttled && istype(mapgen, /datum/map_generator/planet_generator))
+				var/datum/map_generator/planet_generator/unqueued_gen = mapgen
+				unqueued_gen.throttled = FALSE
 		target_area = planet_type.target_area
-		weather_controller_type = planet_type.weather_controller_type
 		weather_trait = planet_type.weather_trait
+		ground_baseturf = planet_type.baseturf
+		has_planetary_surface = !isnull(planet_type.surface_area)
 		if(!(isnull(planet_type.planet_template)))
 			planet_template = new planet_type.planet_template
 		qdel(planet_type)
@@ -562,58 +1461,174 @@ SUBSYSTEM_DEF(overmap)
 			ruin_type = new ruin_type
 
 	var/encounter_name = "Dynamic Overmap Encounter"
-	var/datum/map_zone/mapzone = find_free_mapzone()
 	var/datum/space_level/zlevel
 	// ZTRAIT_LINKAGE = UNAFFECTED disables space transitions so construction is allowed
 	var/list/zlevel_traits = list(ZTRAIT_MINING = TRUE, ZTRAIT_LINKAGE = UNAFFECTED)
 	if(weather_trait)
 		zlevel_traits[weather_trait] = TRUE
+	// Only ground encounters set this. Left null the level bottoms out in space, which is
+	// what empty space, crashed ships and player outposts want. See
+	// /datum/overmap/planet/baseturf.
+	if(ground_baseturf)
+		zlevel_traits[ZTRAIT_BASETURF] = ground_baseturf
 
-	if(isnull(mapzone))
-		mapzone = create_map_zone(encounter_name)
+	// Which lattice this encounter belongs on. Anything that needs a one-per-z service -
+	// its own ground (ZTRAIT_BASETURF), weather, a map generator - or that simply will not
+	// fit inside a MAP_SLOT_SIDE square takes a whole level to itself, exactly as it did
+	// before packing. Everything else (empty space, crashed ships, ruinless weak signals)
+	// is genuinely flat and packs four to a level.
+	if(isnull(tenant_class))
+		tenant_class = MAP_TENANT_CLASS_FLAT
+		if(ground_baseturf || weather_trait || !isnull(mapgen))
+			tenant_class = MAP_TENANT_CLASS_SOLO
+		else if(ruin_type && !ruin_fits_in_slot(ruin_type))
+			tenant_class = MAP_TENANT_CLASS_SOLO
+
+	// Claimed before anything below can sleep, not after the level is minted -
+	// add_new_zlevel() blocks on its own spinlock, and a slot left unclaimed across that
+	// sleep gets handed to the next caller of find_free_slot() as well. Two encounters
+	// then share one footprint, and the first to be abandoned clears the other's ground.
+	var/datum/map_footprint/footprint = claim_free_slot(tenant_class, tenant_owner, zone_name = encounter_name)
+	if(isnull(footprint))
+		log_mapping("SSovermap: dynamic encounter could not claim a '[tenant_class]' slot - encounter aborted")
+		return null
+	if(has_planetary_surface)
+		footprint.enable_planetary_faction()
+	// Null for every genuinely flat encounter (that is what makes them flat), non-null only
+	// for the SOLO ground encounters selected above. Stamped anyway so the footprint is the
+	// single authority every /turf/baseturf_bottom resolution goes through - the level trait
+	// below stays as the fallback and is still what an unpacked level answers with.
+	footprint.baseturf = ground_baseturf
+	var/datum/map_zone/mapzone = footprint.zone
+
+	// length() guard, not [1]: a fresh zone from create_map_zone() has an EMPTY z_levels
+	// list, and indexing it runtimes. That runtime aborted every encounter spawn once the
+	// free-zone pool ran dry AND leaked the zone with taken = TRUE, so the pool never
+	// recovered - round 811 lost all dynamic encounters from 18:03 onward this way.
+	if(length(mapzone.z_levels))
+		zlevel = mapzone.z_levels[1]
+		// A recycled level still holds the last occupant's traits. Reconcile the one that
+		// carries a value: left stale, a space encounter reusing a planet's level would
+		// bottom its turfs out in that planet's ground instead of space.
+		// Only ever the first tenant on the level: on a packed level a co-tenant already
+		// built against this trait, and every packed class leaves it null anyway.
+		if(mapzone.used_slot_count() <= 1)
+			zlevel.set_trait(ZTRAIT_BASETURF, ground_baseturf)
+	else if(SSmapping.at_z_level_ceiling())
+		// claim_free_slot() refuses to MINT a zone at the ceiling, but a zone can also be
+		// dealt from the recycled pool and turn out to have no level yet (a build that
+		// failed before add_new_zlevel, an admin-made zone). Refuse here too, and hand the
+		// slot straight back rather than leaving it claimed against nothing.
+		log_mapping("SSovermap: dynamic encounter refused - world.maxz is at its configured ceiling and [footprint.describe()]'s zone has no level yet")
+		mapzone.release_slot(footprint)
+		return null
+	else
 		zlevel = SSmapping.add_new_zlevel(encounter_name, zlevel_traits)
 		mapzone.add_space_level(zlevel)
-	else
-		if(mapzone.z_levels[1])
-			zlevel = mapzone.z_levels[1]
-			// Add weather trait to existing z-level if needed
-			if(weather_trait)
-				SSmapping.z_trait_levels[weather_trait] += list(zlevel.z_value)
-		else
-			zlevel = SSmapping.add_new_zlevel(encounter_name, zlevel_traits)
-			mapzone.add_space_level(zlevel)
 
-	mapzone.taken = TRUE
+	// add_space_level() attaches slots claimed before the level existed; this covers the
+	// recycled-level branch above, where the level was already there.
+	footprint.attach_level(zlevel)
 
-	var/area/filled_area = zlevel.fill_in(area_override = target_area)
+	// Dynamic levels appear after SSweather.Initialize and map zones are recycled.
+	// Replace any prior encounter's trait, active storm, and cooldown before registering
+	// the new planet's weather. One climate per z, so only the first tenant may set it.
+	if(mapzone.used_slot_count() <= 1)
+		SSweather.set_z_level_weather_trait(zlevel, weather_trait)
+
+	// throttled stays FALSE for unqueued encounter builds (empty space, weak signals):
+	// they must never wait behind a queued planet job - see worldgen_yield() in
+	// worldgen_queue.dm. Queued callers (the large asteroid's cave level) pass TRUE
+	// and share the budget they already hold.
+	var/area/filled_area = zlevel.fill_in(area_override = target_area, throttled = throttled, footprint = footprint)
+
+	// Wall the unclaimed slots (and the world edge) off. Once per level, from the whole
+	// lattice - a second tenant arriving finds this already done and never repaints over
+	// the first one's ground. A whole-level tenant produces no cordon at all, which is
+	// what flat encounters have always had.
+	zlevel.place_cordon(throttled)
 
 	if(ruin_type)
-		var/turf/ruin_turf = locate(rand(
-			zlevel.low_x+6,
-			zlevel.high_x-ruin_type.width-6),
-			zlevel.high_y-ruin_type.height-6,
-			zlevel.z_value
-			)
-		ruin_type.load(ruin_turf)
+		// Bounds are the FOOTPRINT's, not the level's: on a packed level the level rect is
+		// the whole z, and a ruin placed from it lands in the gutter or on the neighbour.
+		// And the region is the slot MINUS its two reserve berths - measuring the ruin down
+		// from footprint.high_y stamps any template 73 rows or taller straight over both of
+		// them, which is a ship materialising inside ruin walls. See slot_build_region().
+		//
+		// The height is passed so the region starts at the PREFERRED floor - ten rows above
+		// the berth band instead of three, the same collar planets keep - for every template
+		// short enough to fit above it. Only the tallest few (68..74 rows in a lattice slot)
+		// drop back to the old floor.
+		var/list/region = slot_build_region(footprint, ruin_type.height)
+		var/ruin_min_x = region[1]
+		var/ruin_min_y = region[2]
+		var/ruin_max_x = region[3] - ruin_type.width + 1
+		var/ruin_max_y = region[4] - ruin_type.height + 1
+		var/turf/ruin_turf = (ruin_min_x <= ruin_max_x && ruin_min_y <= ruin_max_y) \
+			? locate(rand(ruin_min_x, ruin_max_x), rand(ruin_min_y, ruin_max_y), footprint.z_value) \
+			: null
+		if(ruin_turf)
+			// /area/ruin carries UNIQUE_AREA, so the map loader hands every load of the same
+			// template the SAME area instance. On a packed level two co-tenants rolling one
+			// template would share an area straddling both footprints, and every area-scoped
+			// system - teardown, lighting, ambience, power, get_area_turfs() - would conflate
+			// the two sites. Instanced per load for the duration of OUR stamp, on OUR z only.
+			planet_ruin_area_instancing_begin(footprint.z_value)
+			// No try/catch, deliberately: wrapping template.load() swallows a partial stamp
+			// and leaves a dead half-loaded map standing.
+			var/load_result = ruin_type.load(ruin_turf)
+			planet_ruin_area_instancing_end(footprint.z_value)
+			// Only report a corner the template actually reached. Callers that need an
+			// interior (space ruins) read a null here as "no site" and hand the slot back;
+			// the ones that do not (empty space, weak signals) simply carry on ruinless.
+			if(load_result)
+				ruin_bottom_left = ruin_turf
+			else
+				log_mapping("SSovermap: dynamic encounter ruin '[ruin_type.name]' failed to load at ([ruin_turf.x],[ruin_turf.y],[ruin_turf.z])")
+		else
+			// A template too large for the footprint. Passing null into load()
+			// would runtime and, through the callers' loading flags, brick the tile
+			// for the round - a ruinless encounter is the lesser failure.
+			log_mapping("SSovermap: dynamic encounter ruin '[ruin_type.name]' ([ruin_type.width]x[ruin_type.height]) \
+				does not fit the [MAP_SLOT_RUIN_REGION_WIDTH]x[MAP_SLOT_RUIN_REGION_HEIGHT] ruin region of [footprint.describe()] \
+				- encounter spawned without its ruin")
 
 	if (!isnull(mapgen) && (istype(mapgen, /datum/map_generator/planet_generator)) && !isnull(planet_template))
-		mapgen.generate_terrain(zlevel.get_block(), planet_template, FALSE, FALSE)
+		mapgen.generate_terrain(footprint.get_block(), planet_template, FALSE, FALSE)
+		// Terrain generation only lays turfs down and tags each one with the biome it
+		// came from - every scrap of flora, fauna and ground feature comes from the
+		// population pass, which historically only SSmapping's roundstart init ever
+		// ran. Without this a dynamically generated planet is bare landscape. The turf
+		// list is rebuilt because generation replaced every turf in the footprint.
+		mapgen.populate_terrain(footprint.get_block(), filled_area, zone_band)
 	else
 		if (!isnull(mapgen))
-			mapgen.generate_terrain(zlevel.get_block(), planet_template)
+			mapgen.generate_terrain(footprint.get_block(), planet_template)
 
 	if(filled_area)
 		filled_area.reg_in_areas_in_z()
 
-	if(weather_controller_type)
-		new weather_controller_type(mapzone)
+	// Anything mapgen/ruins didn't touch is still uninitialized /turf/open/space/basic,
+	// which players can't interact with (no throwing, no construction). Scoped to the
+	// footprint: an unclaimed slot must stay uninitialized until it is dealt, and this
+	// used to sweep all 65,025 turfs of the level for two 56x40 berths.
+	zlevel.initialize_space_turfs(footprint)
 
-	// locates the first dock in the bottom left, accounting for padding and the border
+	// locates the first dock in the bottom left of the FOOTPRINT, accounting for padding
+	// and the border. Anchored off the level instead, two tenants stack their berths on
+	// the same tiles - the arrival path, so this is not optional.
 	var/turf/primary_docking_turf = locate(
-		zlevel.low_x+RESERVE_DOCK_DEFAULT_PADDING+1,
-		zlevel.low_y+RESERVE_DOCK_DEFAULT_PADDING+1,
-		zlevel.z_value
+		footprint.low_x+RESERVE_DOCK_DEFAULT_PADDING+1,
+		footprint.low_y+RESERVE_DOCK_DEFAULT_PADDING+1,
+		footprint.z_value
 		)
+	if(!primary_docking_turf)
+		// Deranged footprint (a recycled zone gone wrong). A runtime here would
+		// unwind the caller mid-load and wedge its loading flag for the round, so
+		// fail loudly and cleanly instead. The slot is leaked as claimed on purpose:
+		// its state is unknown and handing it to the next caller would be worse.
+		log_mapping("SSovermap: dynamic encounter build found no dock turf in [footprint.describe()] - encounter aborted")
+		return null
 	// now we need to offset to account for the first dock
 	var/turf/secondary_docking_turf = locate(
 		primary_docking_turf.x+RESERVE_DOCK_MAX_SIZE_LONG+RESERVE_DOCK_DEFAULT_PADDING,
@@ -638,18 +1653,144 @@ SUBSYSTEM_DEF(overmap)
 	secondary_dock.dheight = 0
 	secondary_dock.dwidth = 0
 
-	return list(mapzone, primary_dock, secondary_dock)
+	// Both berths get moved and resized to fit every ship that visits; record where they started
+	// so the next arrival is placed from this layout rather than the last visitor's offset.
+	primary_dock.mark_reserve_home()
+	secondary_dock.mark_reserve_home()
+
+	if(has_planetary_surface)
+		footprint.add_planetary_faction_to_existing_mobs()
+
+	return list(mapzone, primary_dock, secondary_dock, footprint, ruin_bottom_left)
+
+/**
+ * The rectangle inside `footprint` a ruin template may be stamped into, as
+ * list(min_x, min_y, max_x, max_y) in absolute coordinates.
+ *
+ * A slot's bottom rows belong to its two reserve berths (see the placement in
+ * spawn_dynamic_encounter): x offsets 4..118, y offsets 4..43. This region is what is
+ * left once those and their PLANET_DOCK_RUIN_CLEARANCE collar are taken out, inset by
+ * MAP_SLOT_RUIN_MARGIN from the slot edge so a template never sits flush against cordon.
+ *
+ * A whole-level footprint (SOLO, outposts) has no lattice geometry to respect but DOES
+ * still carry the same two berths at its own origin, so the same offsets apply - it just
+ * has far more room above them.
+ *
+ * `template_height`, when given, asks for the PREFERRED floor instead: the berth band plus
+ * the full PLANET_DOCK_HOSTILE_CLEARANCE collar planets keep, so a ruin's turrets and its
+ * nests start ten rows off the top of the berth band rather than three. A template too tall
+ * to fit above that floor falls back to MAP_SLOT_RUIN_MIN_Y_OFFSET, because the alternative
+ * is refusing to place it at all. Callers that fill the whole region rather than stamping a
+ * template (asteroid fields) pass nothing and keep the old floor - and the packing gate,
+ * ruin_fits_in_slot(), still measures against MAP_SLOT_RUIN_MIN_Y_OFFSET, so no template
+ * changes tenant class because of this.
+ */
+/datum/controller/subsystem/overmap/proc/slot_build_region(datum/map_footprint/footprint, template_height = 0)
+	var/min_x = footprint.low_x + MAP_SLOT_RUIN_MARGIN
+	var/min_y = footprint.low_y + MAP_SLOT_RUIN_MIN_Y_OFFSET
+	var/max_x = footprint.high_x - MAP_SLOT_RUIN_MARGIN
+	var/max_y = footprint.high_y - MAP_SLOT_RUIN_MARGIN
+	if(template_height > 0)
+		var/preferred_min_y = footprint.low_y + MAP_SLOT_RUIN_PREFERRED_Y_OFFSET
+		// Only if the whole template still fits between the preferred floor and the top of
+		// the region. Never clamps a template out of placeability.
+		if(preferred_min_y + template_height - 1 <= max_y)
+			min_y = preferred_min_y
+	return list(min_x, min_y, max_x, max_y)
+
+/**
+ * Whether a ruin template fits the region a lattice slot actually has free for it.
+ *
+ * NOT a square test against MAP_SLOT_SIDE. The berth band eats the bottom 47 rows of every
+ * slot, so the honest gate is MAP_SLOT_RUIN_REGION_WIDTH x MAP_SLOT_RUIN_REGION_HEIGHT
+ * (119 x 74) - the old `+ 12 <= 123` form accepted templates up to 111 tall and handed
+ * them to a placer that stamped them over both docking berths.
+ *
+ * Templates that fail take MAP_TENANT_CLASS_SOLO, a whole level, which costs exactly what
+ * they cost before packing. Measured 2026-08-20 against the live template list: 112 of 113
+ * pass, the outlier being russian_derelict (83x111).
+ */
+/datum/controller/subsystem/overmap/proc/ruin_fits_in_slot(datum/map_template/ruin/ruin_type)
+	if(!ruin_type)
+		return TRUE
+	return ruin_type.width <= MAP_SLOT_RUIN_REGION_WIDTH && ruin_type.height <= MAP_SLOT_RUIN_REGION_HEIGHT
+
+/**
+ * Whether a ruin template fits even a WHOLE z-level's build region - the same berth band
+ * taken out of a 255x255 footprint rather than a 123x123 one.
+ *
+ * A template failing this cannot be placed anywhere, so the site has to refuse before
+ * claiming a slot: a claimed slot handed back after a failed stamp is a quarter of a
+ * z-level lost, and the caller's loading flag bricks the overmap tile for the round.
+ * Nothing in the current pool comes close (the largest is oldstation at 112x64), but the
+ * old reservation path had exactly this guard and losing it would be a regression.
+ */
+/datum/controller/subsystem/overmap/proc/ruin_fits_in_level(datum/map_template/ruin/ruin_type)
+	if(!ruin_type)
+		return TRUE
+	return ruin_type.width <= (world.maxx - (MAP_SLOT_RUIN_MARGIN * 2)) \
+		&& ruin_type.height <= (world.maxy - MAP_SLOT_RUIN_MARGIN - MAP_SLOT_RUIN_MIN_Y_OFFSET)
 
 
 /datum/controller/subsystem/overmap/proc/create_map_zone(new_name)
 	return new /datum/map_zone(new_name)
 
-/datum/controller/subsystem/overmap/proc/find_free_mapzone()
-	. = null
+/**
+ * Finds a map zone that can deal a slot of `tenant_class`, as list(zone, slot_index).
+ *
+ * Replaces find_free_mapzone(), which handed out whole zones on a single boolean. Prefers
+ * a PARTIALLY FILLED zone of the same class over an empty one - that preference is the
+ * whole point of packing, since spreading tenants across empty levels one apiece is
+ * exactly the behaviour being removed. Only when no same-class level has room does it
+ * fall back to a level with no tenants at all (which is free to take any class on).
+ *
+ * Returns null when every zone is full or of the wrong class; the caller mints one.
+ * Nothing here sleeps - see claim_free_slot().
+ */
+/datum/controller/subsystem/overmap/proc/find_free_slot(tenant_class)
+	var/datum/map_zone/empty_zone = null
 	for(var/datum/map_zone/mapzone as anything in map_zones)
-		if(!mapzone.taken)
-			return(mapzone)
+		var/occupants = mapzone.used_slot_count()
+		if(occupants)
+			if(mapzone.tenant_class == tenant_class && mapzone.has_free_slot(tenant_class))
+				return list(mapzone, mapzone.first_free_slot_index())
+			continue
+		if(isnull(empty_zone))
+			empty_zone = mapzone
+	if(empty_zone)
+		return list(empty_zone, 1)
+	return null
 
-
-
-
+/**
+ * Finds AND claims a slot in one go, returning the /datum/map_footprint.
+ *
+ * Atomic on purpose. find_free_slot() is a check-then-act over a global list, and every
+ * historical bug in this area (round 811 lost every dynamic encounter to one) came from a
+ * claim landing after something was allowed to sleep - add_new_zlevel() blocks on its own
+ * spinlock, so an unclaimed zone held across it is handed straight to the next caller.
+ * Nothing in this path or in claim_slot() sleeps.
+ *
+ * * tenant_class - one of the MAP_TENANT_CLASS_* keys.
+ * * new_owner - the overmap object that will hold the footprint, for logging and for the
+ *   footprint's own owner watch. May be null and set later.
+ * * create_zone - mint a fresh map zone when the pool has nothing. FALSE is for callers
+ *   that want to know the pool is dry rather than grow it.
+ *
+ * Also returns null when world.maxz is at its configured ceiling. A fresh zone has no
+ * z-level, so dealing a slot out of one always means minting one, and BYOND never frees a
+ * z-level. Callers must read a null the way they already read a dry pool - "not right
+ * now", retry later - never as a hard failure. This is a SLOT-AVAILABILITY wait and is
+ * deliberately outside the worldgen queue: a ruin or an empty-space dock may never end up
+ * waiting behind a planet build (the design rule in worldgen_queue.dm), and nothing in
+ * this path sleeps.
+ */
+/datum/controller/subsystem/overmap/proc/claim_free_slot(tenant_class, atom/new_owner, create_zone = TRUE, zone_name = "Dynamic Overmap Encounter")
+	var/list/found = find_free_slot(tenant_class)
+	var/datum/map_zone/mapzone = length(found) ? found[1] : null
+	if(isnull(mapzone))
+		if(!create_zone)
+			return null
+		if(SSmapping.at_z_level_ceiling())
+			return null
+		mapzone = create_map_zone(zone_name)
+	return mapzone.claim_slot(tenant_class, new_owner)

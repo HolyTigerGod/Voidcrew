@@ -23,6 +23,9 @@ import { formatMoney } from 'tgui-core/format';
 
 import { useBackend, useSharedState } from '../../tgui/backend';
 
+// Shuttle state constants (must match DM defines)
+const CARGO_SHUTTLE_AWAY = 0;
+
 // Inline search function to avoid import issues
 function searchForSupplies(supplies, search) {
   const lowerSearch = search.toLowerCase();
@@ -67,7 +70,13 @@ export function VoidcrewCargoCatalog(props) {
   const { data } = useBackend();
   const { express } = props;
 
-  const supplies = Object.values(data.supplies || {});
+  // `data` is a fresh object on every backend push, so Object.values() here would hand
+  // back a new array ~every second and invalidate the packs memo below - re-sorting and
+  // re-rendering the whole catalog on every tick. `data.supplies` itself is static data,
+  // so it keeps a stable reference across partial updates; key the memo on that.
+  const supplies = useMemo(() => Object.values(data.supplies || {}), [
+    data.supplies,
+  ]);
   const [showContents, setShowContents] = useState('');
   const [searchText, setSearchText] = useSharedState('search_text', '');
   const [activeSupplyName, setActiveSupplyName] = useSharedState(
@@ -95,7 +104,7 @@ export function VoidcrewCargoCatalog(props) {
 
   return (
     <>
-      {showContents && (
+      {!!showContents && (
         <CatalogPackInfo
           packs={packs}
           name={showContents}
@@ -138,7 +147,10 @@ function CatalogTabs(props) {
   } = props;
   const { self_paid } = data;
 
-  const sorted = sortBy(categories, [(supply) => supply.name]);
+  const sorted = useMemo(
+    () => sortBy(categories, [(supply) => supply.name]),
+    [categories],
+  );
 
   return (
     <Stack fill vertical>
@@ -207,8 +219,16 @@ function CatalogTabs(props) {
 
 function CatalogList(props) {
   const { act, data } = useBackend();
-  const { amount_by_name = {}, max_order = 20, self_paid, app_cost } = data;
+  const {
+    amount_by_name = {},
+    max_order = 20,
+    self_paid,
+    app_cost,
+    shuttle_state = CARGO_SHUTTLE_AWAY,
+  } = data;
   const { packs = [], openContents } = props;
+  // Once the shuttle is called the cart is a dispatched manifest - no more additions
+  const cartLocked = shuttle_state !== CARGO_SHUTTLE_AWAY;
 
   return (
     <>
@@ -241,7 +261,9 @@ function CatalogList(props) {
             dmIconState={pack.first_item_icon_state}
             imageSize={32}
             color={color}
-            disabled={(amount_by_name[pack.name] || 0) >= max_order}
+            disabled={
+              cartLocked || (amount_by_name[pack.name] || 0) >= max_order
+            }
             buttonsAlt={
               <Button
                 color="transparent"
@@ -259,13 +281,12 @@ function CatalogList(props) {
               <Stack.Item grow textAlign="left">
                 {pack.name}
               </Stack.Item>
-              {(!!pack.small_item || !!pack.access || !!pack.contraband) && (
+              {/* No 'Restricted' lock marker: ship crates never arrive locked. */}
+              {(!!pack.small_item || !!pack.contraband) && (
                 <Stack.Item>
                   <Stack reverse>
                     {!!pack.small_item &&
                       tooltipIcon('Small Item', 'compress-alt', 'purple')}
-                    {!!pack.access &&
-                      tooltipIcon('Restricted', 'lock', 'average')}
                     {!!pack.contraband &&
                       tooltipIcon('Contraband', 'pastafarianism', 'bad')}
                   </Stack>

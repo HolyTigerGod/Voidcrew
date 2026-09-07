@@ -14,10 +14,8 @@
 /obj/machinery/atmospherics/pipe/smart/manifold4w/scrubbers{
 	dir = 8
 	},
-/obj/structure/window/reinforced/spawner,
-/obj/structure/window/reinforced/spawner{
-	dir = 1
-	},
+/obj/structure/window/reinforced/spawner/directional/south,
+/obj/structure/window/reinforced/spawner/directional/north,
 /obj/machinery/cryopod{
 	density = 0
 	},
@@ -26,9 +24,7 @@
 	density = 0
 	},
 /obj/machinery/power/apc/auto_name/directional/west,
-/obj/structure/window/reinforced/spawner{
-	dir = 8
-	},
+/obj/structure/window/reinforced/spawner/directional/west,
 /obj/machinery/computer/cryopod{
 	pixel_y = 8
 	},
@@ -36,42 +32,9 @@
 /turf/open/floor/carpet/neon/simple/red,
 /area/shuttle/voidcrew/pill)
 "c" = (
-/obj/item/pickaxe/drill,
-/obj/item/pickaxe/drill,
-/obj/item/pickaxe/drill,
-/obj/item/t_scanner/adv_mining_scanner/lesser,
-/obj/item/t_scanner/adv_mining_scanner/lesser,
-/obj/item/t_scanner/adv_mining_scanner/lesser,
-/obj/item/storage/bag/ore,
-/obj/item/storage/bag/ore,
-/obj/item/storage/bag/ore,
-/obj/item/weldingtool/experimental,
-/obj/item/areaeditor/shuttle,
-/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
-/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
-/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
-/obj/item/tank/internals/oxygen,
-/obj/item/tank/internals/oxygen,
-/obj/item/tank/internals/oxygen,
-/obj/item/clothing/mask/gas,
-/obj/item/clothing/mask/gas,
-/obj/item/clothing/mask/gas,
 /obj/structure/cable,
-/obj/structure/bed,
-/obj/machinery/computer/helm{
-	density = 0;
-	dir = 8;
-	pixel_x = 5
-	},
-/obj/item/storage/medkit/toxin,
-/obj/item/storage/medkit/advanced,
-/obj/item/storage/backpack/duffelbag/med/surgery,
-/obj/item/storage/medkit/o2,
 /obj/machinery/light/floor,
-/obj/structure/window/reinforced/spawner{
-	dir = 4
-	},
-/obj/structure/window/reinforced/spawner,
+/obj/structure/window/reinforced/spawner/directional/south,
 /obj/structure/fans/tiny,
 /obj/machinery/door/window{
 	dir = 1
@@ -79,13 +42,71 @@
 /obj/machinery/atmospherics/components/unary/vent_scrubber/on{
 	dir = 8
 	},
-/obj/item/storage/toolbox/mechanical/old,
-/obj/item/storage/box/stockparts/basic,
-/obj/item/circuitboard/machine/autolathe,
-/obj/item/clothing/head/utility/welding,
 /obj/docking_port/mobile/voidcrew/pill{
 	dir = 2
 	},
+/obj/modular_map_root/ship_upgrade{
+	key = "pill_extra"
+	},
+/turf/open/floor/carpet/neon/simple/red,
+/area/shuttle/voidcrew/pill)
+"J" = (
+/obj/structure/window/reinforced/spawner/directional/north,
+/obj/structure/window/reinforced/spawner/directional/east,
+/obj/structure/window/reinforced/spawner/directional/south,
+/obj/machinery/light/floor,
+/obj/structure/bed,
+/obj/machinery/computer/helm{
+	density = 0;
+	dir = 8;
+	pixel_x = 5
+	},
+/obj/machinery/holopad,
+/obj/item/pickaxe/drill,
+/obj/item/pickaxe/drill,
+/obj/item/pickaxe/drill,
+/obj/item/pickaxe/drill,
+/obj/item/t_scanner/adv_mining_scanner/lesser,
+/obj/item/t_scanner/adv_mining_scanner/lesser,
+/obj/item/t_scanner/adv_mining_scanner/lesser,
+/obj/item/t_scanner/adv_mining_scanner/lesser,
+/obj/item/storage/bag/ore,
+/obj/item/storage/bag/ore,
+/obj/item/storage/bag/ore,
+/obj/item/storage/bag/ore,
+/obj/item/weldingtool/experimental,
+/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
+/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
+/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
+/obj/item/clothing/suit/hooded/carp_costume/spaceproof/old,
+/obj/item/tank/internals/oxygen,
+/obj/item/tank/internals/oxygen,
+/obj/item/tank/internals/oxygen,
+/obj/item/tank/internals/oxygen,
+/obj/item/clothing/mask/gas,
+/obj/item/clothing/mask/gas,
+/obj/item/clothing/mask/gas,
+/obj/item/clothing/mask/gas,
+/obj/item/storage/medkit/toxin,
+/obj/item/storage/medkit/advanced,
+/obj/item/storage/backpack/duffelbag/sec/surgery,
+/obj/item/storage/medkit/o2,
+/obj/item/storage/toolbox/mechanical/old,
+/obj/item/storage/box/stockparts/basic,
+/obj/item/circuitboard/machine/autolathe,
+/obj/item/paper{
+	name = "fuel notes";
+	default_raw_text = "Fuel notes. The generator burns solid plasma sheets and nothing else, so do not try to put ore in it. A welder will smelt iron ore and sand into sheets, but it will not touch plasma. Plasma needs an ore redemption machine and this ship does not have one. If you run dry, build the autolathe from the board in this pile, print the Research and Development Kit from it, and work up to a redemption machine from there. The thirty sheets you start with will not last the trip.";
+	pixel_x = -5;
+	pixel_y = -3
+	},
+/obj/item/clothing/head/utility/welding,
+/obj/item/storage/box/donkpockets,
+/obj/item/food/canned/beans,
+/obj/item/food/canned/beans,
+/obj/item/food/canned/beans,
+/obj/item/food/sosjerky,
+/obj/item/food/energybar,
 /turf/open/floor/carpet/neon/simple/red,
 /area/shuttle/voidcrew/pill)
 
@@ -97,4 +118,7 @@ b
 "}
 (3,1,1) = {"
 c
+"}
+(4,1,1) = {"
+J
 "}

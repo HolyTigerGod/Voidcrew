@@ -21,7 +21,7 @@
 	ship_color = NPC_COLOR_SILVERSCALE
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	// Combat stats - aristocrats are methodical
 	lock_time = 6 SECONDS          // Increased for balance
@@ -46,10 +46,17 @@
 	negotiation_dialog_type = /datum/pirate_faction_dialog/silverscale
 	min_negotiation_demand = 800
 	max_negotiation_demand = 15000
+	// And carry more tribute to be relieved of
+	hold_credits_min = 2200
+	hold_credits_max = 4600
 	pirate_faction = "silverscale"
 
 	// Phased combat - aristocratic duelists
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/silverscale
+	broke_lines = list(
+		"Destitute. How disappointing. My retainers will see what else your hold contains.",
+		"You have nothing to offer but cargo, then. And perhaps your lives.",
+	)
 	wave_taunts = list(
 		list(
 			"Your crew has spirit. A pity it will be broken.",
@@ -75,7 +82,7 @@
 	ship_color = NPC_COLOR_SKELETON
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	// Combat stats - undead crew are relentless
 	lock_time = 4 SECONDS
@@ -100,10 +107,16 @@
 	negotiation_dialog_type = /datum/pirate_faction_dialog/skeleton
 	min_negotiation_demand = 400
 	max_negotiation_demand = 8000
+	hold_credits_min = 1100
+	hold_credits_max = 2400
 	pirate_faction = "skeleton"
 
 	// Phased combat - undead hordes
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/skeleton
+	broke_lines = list(
+		"No coin on this wreck. No matter - we take flesh as readily as gold.",
+		"Empty holds, empty pockets. We will settle for your crew.",
+	)
 	wave_taunts = list(
 		list(
 			"The dead do not tire. We will keep coming.",
@@ -129,7 +142,7 @@
 	ship_color = NPC_COLOR_GREY
 
 	// Grey tiders are opportunistic
-	territory_range = 2
+	territory_range = 3
 
 	// Weaker ship stats - they're assistants after all
 	speed_limit = 0.4
@@ -155,9 +168,15 @@
 	min_negotiation_demand = 200
 	max_negotiation_demand = 5000
 	pirate_faction = "grey"
+	hold_credits_min = 700
+	hold_credits_max = 1600
 
 	// Phased combat - greytide swarm
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/grey
+	broke_lines = list(
+		"lmao ur broke? w/e. boys go grab whatever isnt bolted down",
+		"no creds? fine. WE TAKE THE TOOLBOXES",
+	)
 	wave_taunts = list(
 		list(
 			"GREYTIDE STATION WIDE! MORE TIDERS INCOMING!",
@@ -183,7 +202,7 @@
 	ship_color = NPC_COLOR_LUSTROUS
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	crew_min = 2
 	crew_max = 4
@@ -204,9 +223,15 @@
 	min_negotiation_demand = 500
 	max_negotiation_demand = 10000
 	pirate_faction = "lustrous"
+	hold_credits_min = 1400
+	hold_credits_max = 3000
 
 	// Phased combat - crystalline beings
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/lustrous
+	broke_lines = list(
+		"You carry no wealth. We will take what matter you do carry.",
+		"Nothing of value in your accounts. We will harvest from your hold instead.",
+	)
 	wave_taunts = list(
 		list(
 			"Your violence disturbs the crystal matrix. More shall come.",
@@ -232,7 +257,7 @@
 	ship_color = NPC_COLOR_INTERDYNE
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	// Better equipped but balanced
 	lock_time = 5 SECONDS           // Increased from 4s for balance
@@ -259,9 +284,15 @@
 	min_negotiation_demand = 700
 	max_negotiation_demand = 12000
 	pirate_faction = "interdyne"
+	hold_credits_min = 1800
+	hold_credits_max = 3800
 
 	// Phased combat - surgical strike teams
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/interdyne
+	broke_lines = list(
+		"Accounts empty. Switching to physical asset recovery. Deploying collection team.",
+		"No liquid funds. Your cargo and your crew will serve as compensation.",
+	)
 	wave_taunts = list(
 		list(
 			"Subjects neutralized. Deploying backup extraction team.",
@@ -287,7 +318,7 @@
 	ship_color = NPC_COLOR_IRS
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	// Well-funded government agency - but still balanced
 	lock_time = 5 SECONDS           // Increased from 3s for balance
@@ -318,9 +349,16 @@
 	min_negotiation_demand = 1000
 	max_negotiation_demand = 20000
 	pirate_faction = "irs"
+	// Collections vessel: the fullest coffers in the pool, and the best robbery
+	hold_credits_min = 2800
+	hold_credits_max = 6000
 
 	// Phased combat - tax enforcement
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/irs
+	broke_lines = list(
+		"Insufficient funds for settlement. Proceeding directly to asset seizure.",
+		"You cannot pay. Then we collect in kind. Agents are boarding now.",
+	)
 	wave_taunts = list(
 		list(
 			"Resistance to audit has been noted on your permanent record.",
@@ -346,7 +384,7 @@
 	ship_color = NPC_COLOR_MEDIEVAL
 
 	// Detection range
-	territory_range = 2
+	territory_range = 3
 
 	// Slow but tough - they don't really understand the engines
 	speed_limit = 0.35
@@ -376,9 +414,15 @@
 	min_negotiation_demand = 600
 	max_negotiation_demand = 12000
 	pirate_faction = "medieval"
+	hold_credits_min = 1500
+	hold_credits_max = 3200
 
 	// Phased combat - knights and men-at-arms
 	boss_type = /mob/living/basic/trooper/pirate/faction/boss/medieval
+	broke_lines = list(
+		"No coin in thy coffers? Then we shall take thy goods by force of arms!",
+		"A pauper's ship! Very well - the spoils shall be whatever thou carriest!",
+	)
 	wave_taunts = list(
 		list(
 			"HUZZAH! Your mettle is tested! Send forth more knights!",

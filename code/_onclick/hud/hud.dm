@@ -188,7 +188,10 @@ GLOBAL_LIST_INIT(available_ui_styles, list(
 		group.build_planes_offset(src, current_plane_offset)
 
 /datum/hud/proc/should_use_scale()
-	return should_sight_scale(mymob.sight)
+	// A hud can outlive its mob (and plane groups can be rebuilt while detached), and this
+	// runs at the very top of build_planes_offset() - runtiming here skips the whole
+	// offset rebuild, which is how clients end up rendering to planes that have no master.
+	return should_sight_scale(mymob?.sight)
 
 /datum/hud/proc/should_sight_scale(sight_flags)
 	return (sight_flags & (SEE_TURFS | SEE_OBJS)) != SEE_TURFS
@@ -196,6 +199,7 @@ GLOBAL_LIST_INIT(available_ui_styles, list(
 /datum/hud/proc/eye_z_changed(atom/eye)
 	SIGNAL_HANDLER
 	update_parallax_pref() // If your eye changes z level, so should your parallax prefs
+	resend_healthdoll() // VOIDCREW EDIT ADDITION - the client drops the doll's vis_contents on a z change, see the proc
 	var/turf/eye_turf = get_turf(eye)
 	if(!eye_turf)
 		return
@@ -210,6 +214,51 @@ GLOBAL_LIST_INIT(available_ui_styles, list(
 	for(var/group_key as anything in master_groups)
 		var/datum/plane_master_group/group = master_groups[group_key]
 		group.build_planes_offset(src, new_offset)
+
+// VOIDCREW EDIT ADDITION BEGIN - the health doll has to be re-sent on a z change (issue #126)
+/**
+ * Takes the health doll off the client's screen and puts it straight back, so the client
+ * re-establishes the doll's visual contents.
+ *
+ * The doll draws each limb as a separate screen object in its own vis_contents
+ * (/atom/movable/screen/healthdoll/human/update_body_zones in screen_objects.dm), because
+ * upstream wants per-limb outline filters it can animate. On a z change - which here is
+ * every single dock and undock - the BYOND client drops those children and never gets
+ * them back. This is a known client-side bug class, not a DM one: BYOND id:2303806
+ * ("Visual contents were not taken into account by the client-side garbage collector...
+ * The objects still exist, just aren't visible unless you change an appearance var to
+ * bring them back into the view") and id:2359025 ("visual contents no longer showed up
+ * after changing Z levels"). Server side the limbs stay alive with correct icon_states
+ * throughout - there are no runtimes for them in any round log, and nothing in DM touches
+ * the doll on a z change.
+ *
+ * vis_contents is not part of an atom's appearance, and the doll has no icon_state and no
+ * overlays of its own, so its appearance never changes for its entire life and the client
+ * is never told about it a second time. That leaves a limb's own icon_state as the only
+ * thing that can bring it back, which is exactly what players reported ("get damage on
+ * that limb and heal it to fix it") and why the limbs surviving a dock were always the
+ * ones that had taken or healed damage since.
+ *
+ * Re-adding the doll to client.screen re-sends it and its children. This is the same
+ * treatment the parallax backdrop already gets by accident: it is the only other screen
+ * object built on vis_contents, and update_parallax_pref() above tears its holder off the
+ * screen and adds it back (remove_parallax/create_parallax in parallax.dm) on every z
+ * change, which is why parallax does not rot the way the doll did.
+ *
+ * Do not "simplify" this into update_appearance() or update_body_zones(). The first
+ * changes nothing about the doll's appearance so nothing is sent; the second rebuilds six
+ * screen objects to repair a link that was never broken server side.
+ */
+/datum/hud/proc/resend_healthdoll()
+	var/client/our_client = mymob?.client
+	if(isnull(our_client) || isnull(healthdoll))
+		return
+	// Hud hidden with F12? The doll is deliberately off the screen, leave it off.
+	if(!(healthdoll in our_client.screen))
+		return
+	our_client.screen -= healthdoll
+	our_client.screen += healthdoll
+// VOIDCREW EDIT ADDITION END
 
 /datum/hud/Destroy()
 	if(mymob.hud_used == src)
@@ -264,10 +313,23 @@ GLOBAL_LIST_INIT(available_ui_styles, list(
 	build_plane_groups(old_max_offset + 1, new_max_offset)
 
 /// Creates the required plane masters to fill out new z layers (because each "level" of multiz gets its own plane master set)
+/// Note that this runs mid-round, whenever the first map of a given stack depth loads. By then our group is already
+/// attached to us, so nothing is going to call show_hud() on our behalf the way group creation does - we have to show
+/// the new planes ourselves. Skipping that leaves the new offset's planes off the client's screen entirely, and a plane
+/// with no plane master doesn't just go missing, it stops being managed: anything drawn to it (the parallax plane's
+/// mirror relays especially, which get added to the screen the moment the offset grows) renders raw and unmasked
+/// straight over the game, which is where "the colosseum spawned and now I can see space through walls" came from.
 /datum/hud/proc/build_plane_groups(starting_offset, ending_offset)
 	for(var/group_key in master_groups)
 		var/datum/plane_master_group/group = master_groups[group_key]
-		group.build_plane_masters(starting_offset, ending_offset)
+		var/list/atom/movable/screen/plane_master/new_planes = group.build_plane_masters(starting_offset, ending_offset)
+		if(!length(new_planes))
+			continue
+		for(var/atom/movable/screen/plane_master/plane as anything in new_planes)
+			group.show_plane(plane)
+		// Match what group creation does after show_hud(), so the planes we just added get the same multiz
+		// scaling and in/out of bounds treatment a client who connected after the load would have gotten
+		group.build_planes_offset(src, current_plane_offset)
 
 /// Returns the plane master that matches the input plane from the passed in group
 /datum/hud/proc/get_plane_master(plane, group_key = PLANE_GROUP_MAIN)

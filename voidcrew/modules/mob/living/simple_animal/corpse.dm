@@ -1,4 +1,9 @@
-/obj/effect/mob_spawn/human/corpse/solgov/infantry
+/// Shared parent of the SolGov corpse outfits. Named so it doesn't show up as a
+/// nameless entry in the admin outfit list.
+/datum/outfit/solgov
+	name = "SolGov"
+
+/obj/effect/mob_spawn/corpse/human/solgov/infantry
 	name = "SolGov Infantryman"
 	outfit = /datum/outfit/solgov/infantrymancorpse
 	hairstyle = "Buzzcut"
@@ -18,7 +23,7 @@
 	id = /obj/item/card/id/solgov
 	backpack_contents = null
 
-/obj/effect/mob_spawn/human/corpse/solgov/officer
+/obj/effect/mob_spawn/corpse/human/solgov/officer
 	name = "SolGov Officer"
 	outfit = /datum/outfit/solgov/officercorpse
 	//id_access_list = list(ACCESS_CENT_CAPTAIN)

@@ -8,6 +8,57 @@
 	/// The player using this menu
 	var/mob/dead/new_player/user
 
+/**
+ * Every ship the join menu is willing to show a player: it exists, it has somewhere to
+ * put them, it is accepting crew, and it is not an NPC hull nobody has claimed yet.
+ *
+ * Shared by the menu's ship list and the requisition gate so the two can never disagree
+ * about what counts as an available ship. Ships with no free positions are still in
+ * here - they're listed with the Join button disabled.
+ */
+/proc/get_joinable_ships()
+	var/list/obj/structure/overmap/ship/joinable = list()
+	for(var/obj/structure/overmap/ship/candidate as anything in SSovermap.simulated_ships)
+		if(isnull(candidate.shuttle))
+			continue
+		if(length(candidate.shuttle.spawn_points) <= 0 || !candidate.joining_allowed)
+			continue
+		var/obj/structure/overmap/ship/npc/npc_ship = candidate
+		if(istype(npc_ship) && !npc_ship.player_controlled)
+			continue
+		joinable += candidate
+	return joinable
+
+/// Whether a ship has any job with a position still open on it.
+/proc/ship_has_open_slots(obj/structure/overmap/ship/ship)
+	for(var/datum/job/job as anything in ship.job_slots)
+		if(ship.job_slots[job] > 0)
+			return TRUE
+	return FALSE
+
+/**
+ * Whether a free hull can be requisitioned right now, for this player.
+ *
+ * Requisition is the fleet's floor, not a way around it. It opens only when there is
+ * nowhere left in the fleet to sit - every ship full, or every ship destroyed. While
+ * any hull still has an open position the player joins that instead, which is what
+ * keeps a wiped crew regrouping onto one replacement rather than scattering onto a
+ * hull each, and keeps parts worth saving: they buy you the hull you want on demand,
+ * not access to a hull at all.
+ *
+ * Per-player because of join passwords: a locked hull is not a seat for someone who
+ * can't get through its door, and without this a fleet of nothing but locked ships
+ * would leave a newcomer unable to join anything OR requisition.
+ */
+/proc/can_requisition_hull(mob/user)
+	for(var/obj/structure/overmap/ship/ship as anything in get_joinable_ships())
+		if(!ship_has_open_slots(ship))
+			continue
+		if(!ship.is_password_cleared(user?.ckey))
+			continue
+		return FALSE
+	return TRUE
+
 /datum/ship_join_menu/New(mob/dead/new_player/player)
 	. = ..()
 	user = player
@@ -25,6 +76,13 @@
 /datum/ship_join_menu/ui_state(mob/user)
 	return GLOB.always_state
 
+/datum/ship_join_menu/ui_static_data(mob/user)
+	var/list/data = list()
+	// Grey the button out client-side rather than handing out a button that
+	// only ever errors - same rule the lobby wiki button follows.
+	data["wiki_url"] = CONFIG_GET(string/wikiurl)
+	return data
+
 /datum/ship_join_menu/ui_data(mob/user)
 	var/list/data = list()
 
@@ -34,17 +92,7 @@
 
 	// Build list of active ships
 	var/list/ships = list()
-	for(var/obj/structure/overmap/ship/active_ship as anything in SSovermap.simulated_ships)
-		if(isnull(active_ship.shuttle))
-			continue
-		// Skip ships that aren't accepting crew or have no spawn points
-		if(length(active_ship.shuttle.spawn_points) <= 0 || !active_ship.joining_allowed)
-			continue
-		// Skip NPC ships unless they've been claimed by players
-		var/obj/structure/overmap/ship/npc/npc_ship = active_ship
-		if(istype(npc_ship) && !npc_ship.player_controlled)
-			continue
-
+	for(var/obj/structure/overmap/ship/active_ship as anything in get_joinable_ships())
 		var/crew_count = length(active_ship.manifest)
 		var/class_name = active_ship.source_template?.short_name || "Unknown Class"
 
@@ -64,11 +112,48 @@
 			"class_name" = class_name,
 			"crew_count" = crew_count,
 			"jobs" = jobs,
-			"memo" = active_ship.memo
+			"memo" = active_ship.memo,
+			"locked" = !!active_ship.join_password,
+			"password_cleared" = active_ship.is_password_cleared(user.ckey),
+			"crew_locked" = !!active_ship.crew_only_airlocks,
+			"applied" = !isnull(active_ship.find_crew_application(user.ckey))
 		))
 
+	var/list/homes = list()
+	for(var/obj/structure/overmap/dynamic/player_outpost/home as anything in GLOB.player_outposts)
+		if(!home.loaded || !home.founder_ckey)
+			continue
+		homes += list(list("ref" = REF(home), "name" = home.name, "mode" = home.resident_mode, "cleared" = home.has_resident_clearance(user.ckey), "residents" = home.active_resident_count(), "status" = home.resident_admission_error(user.ckey), "pods" = !!home.available_resident_pod()))
+	data["outposts"] = homes
 	data["ships"] = ships
+	data["can_requisition"] = can_requisition_hull(user)
 	return data
+
+/**
+ * Asks the player for their one line to the captain and files the application.
+ *
+ * Every gate is re-checked after the prompt returns: a captain can clear the password,
+ * approve them, or lose the hull entirely while the box is open.
+ */
+/datum/ship_join_menu/proc/prompt_crew_application(obj/structure/overmap/ship/ship)
+	if(QDELETED(ship) || !user)
+		return
+	if(!ship.join_password)
+		to_chat(user, span_warning("[ship.name] is not locked - you can just join it."))
+		return
+	if(ship.is_password_cleared(user.ckey))
+		to_chat(user, span_notice("You are already cleared to join [ship.name]."))
+		return
+	if(ship.find_crew_application(user.ckey))
+		to_chat(user, span_warning("You already have an application waiting on [ship.name]."))
+		return
+	// encode = FALSE: this text is rendered by TGUI, which escapes for itself, and is
+	// html_encode()d at the one place it reaches chat. Encoding here would print
+	// entities at the captain instead of an apostrophe.
+	var/pitch = tgui_input_text(user, "One line to the captain of [ship.name]: who you are and what you want to do aboard.", "Apply to [ship.name]", max_length = SHIP_APPLICATION_MESSAGE_MAX_LEN, encode = FALSE, timeout = 2 MINUTES)
+	if(isnull(pitch) || QDELETED(ship) || !user)
+		return
+	ship.file_crew_application(user, pitch)
 
 /datum/ship_join_menu/ui_act(action, list/params, datum/tgui/ui, datum/ui_state/state)
 	if(..())
@@ -77,12 +162,35 @@
 	. = TRUE
 
 	switch(action)
+		if("join_outpost")
+			var/obj/structure/overmap/dynamic/player_outpost/home = locate(params["ref"]) in GLOB.player_outposts
+			if(home && user == ui.user)
+				INVOKE_ASYNC(user, TYPE_PROC_REF(/mob/dead/new_player, join_outpost), home)
+			return TRUE
+		if("open_wiki")
+			var/wiki_url = CONFIG_GET(string/wikiurl)
+			if(!wiki_url)
+				return FALSE
+			// Hands the link to the player's own browser; TGUI itself has no way
+			// out to an external site.
+			DIRECT_OUTPUT(user, link(wiki_url))
+
 		if("purchase_ship")
-			// Close this menu and open ship catalog
+			// Close this menu and open the ship shop - hull, theme and modules all
+			// live in the one UI that shows you what you're buying
 			ui.close()
-			var/datum/callback/cb = CALLBACK(user, TYPE_PROC_REF(/mob/dead/new_player, on_ship_catalog_selection))
-			var/datum/ship_catalog_ui/catalog = new(user, latejoin = TRUE, selection_callback = cb)
-			catalog.ui_interact(user)
+			var/datum/callback/cb = CALLBACK(user, TYPE_PROC_REF(/mob/dead/new_player, on_upgrades_confirmed))
+			var/datum/ship_upgrade_selector/selector = new(user, null, cb)
+			selector.ui_interact(user)
+
+		if("requisition_hull")
+			// Re-checked in requisition_free_hull() too - the UI is never the authority
+			// on this, and the fleet can fill up while the menu sits open
+			if(!can_requisition_hull(user))
+				to_chat(user, span_warning("There are still open positions in the fleet. Join one of those instead."))
+				return FALSE
+			ui.close()
+			user.requisition_free_hull()
 
 		if("select_ship")
 			var/ship_ref = params["ship_ref"]
@@ -108,6 +216,27 @@
 				to_chat(user, span_warning("That ship has no spawn points available."))
 				return FALSE
 
+			// The other half of the cryopod's anti-dupe rule: whoever just cryo'd out of
+			// THIS ship waits out the cooldown before taking a seat on it again. Any
+			// other ship is open to them right away.
+			var/rejoin_wait = cryo_rejoin_wait(user.ckey, ship)
+			if(rejoin_wait)
+				to_chat(user, span_warning("You left this ship's crew for cryosleep too recently to rejoin it. Try again in [DisplayTimeText(rejoin_wait)], or join a different ship."))
+				return FALSE
+
 			// Close menu and proceed to job selection
 			ui.close()
 			user.select_job_on_ship(ship)
+
+		if("apply_to_ship")
+			var/apply_ref = params["ship_ref"]
+			if(!apply_ref)
+				return FALSE
+			var/obj/structure/overmap/ship/target = locate(apply_ref)
+			if(!istype(target))
+				to_chat(user, span_warning("That ship is no longer available."))
+				return FALSE
+			// The message prompt sleeps. The menu stays open behind it, so the wait
+			// cannot sit on the TGUI call or every other button in the menu queues
+			// behind it for as long as the player is typing.
+			INVOKE_ASYNC(src, PROC_REF(prompt_crew_application), target)

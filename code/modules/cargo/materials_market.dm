@@ -101,13 +101,41 @@
 		set_light(initial(light_range), initial(light_power))
 
 /**
+ * VOIDCREW EDIT ADDITION: four seams so a market that is not bolted to a station's cargo
+ * department can still work. Nothing in this fork ever ships SSshuttle.shopping_list -
+ * deliveries run off the per-ship cargo console's own cart (voidcrew/modules/cargo/shipping)
+ * - and there is no ACCOUNT_CAR budget and no crew member holding ACCESS_CARGO, so an order
+ * placed here used to be quoted against the wrong account and then filed into a list nothing
+ * reads. Overridden in voidcrew/edits/materials_market.dm.
+ */
+
+/// The order list this market files into. Null means it has nowhere to file an order.
+/// `announce_refusal` is TRUE only on the path that is actually placing one, so the override
+/// can say why it is refusing without spamming that message from every ui_data() tick.
+/obj/machinery/materials_market/proc/get_order_list(announce_refusal = FALSE)
+	return SSshuttle.shopping_list
+
+/// Whether `id_card` may spend a budget here instead of their own money.
+/obj/machinery/materials_market/proc/can_order_on_budget(obj/item/card/id/id_card)
+	return (ACCESS_CARGO in id_card?.GetAccess())
+
+/// Whether an order placed with `id_card` comes out of the buyer's own pocket, which means a
+/// 1.1x surcharge and a crate only their ID can open.
+/obj/machinery/materials_market/proc/ordering_privately(obj/item/card/id/id_card)
+	return ordering_private || !can_order_on_budget(id_card)
+
+/// The account an order placed here is quoted against, and billed to when it is not private.
+/obj/machinery/materials_market/proc/market_account(obj/item/card/id/id_card, is_ordering_private)
+	return is_ordering_private ? id_card?.registered_account : SSeconomy.get_dep_account(ACCOUNT_CAR)
+
+/**
  * Find the order purchased either privately or by cargo budget
  * Arguments
  * * [user][mob] - the user who placed this order
  * * is_ordering_private - is the player ordering privatly. If FALSE it means they are using cargo budget
  */
 /obj/machinery/materials_market/proc/find_order(mob/user, is_ordering_private)
-	for(var/datum/supply_order/order in SSshuttle.shopping_list)
+	for(var/datum/supply_order/order in get_order_list())
 		// Must be a Galactic Materials Market order and payed by the null account(if ordered via cargo budget) or by correct user for private purchase
 		if(order.orderer_rank == GALATIC_MATERIAL_ORDER && ( \
 			(!is_ordering_private && isnull(order.paying_account)) || \
@@ -132,15 +160,14 @@
 	. = list()
 
 	//can this player use cargo budget
-	var/can_buy_via_budget = FALSE
 	var/obj/item/card/id/used_id_card
 	if(isliving(user))
 		var/mob/living/living_user = user
 		used_id_card = living_user.get_idcard(TRUE)
-		can_buy_via_budget = (ACCESS_CARGO in used_id_card?.GetAccess())
+	var/can_buy_via_budget = can_order_on_budget(used_id_card)
 
 	//if no cargo access then force private purchase
-	var/is_ordering_private = ordering_private || !can_buy_via_budget
+	var/is_ordering_private = ordering_privately(used_id_card)
 
 	//find current order based on ordering mode & player
 	var/datum/supply_order/current_order = find_order(user, is_ordering_private)
@@ -207,13 +234,11 @@
 			))
 
 	//get account balance
-	var/balance = 0
-	if(!ordering_private)
-		var/datum/bank_account/dept = SSeconomy.get_dep_account(ACCOUNT_CAR)
-		if(dept)
-			balance = dept.account_balance
-	else
-		balance = used_id_card?.registered_account?.account_balance
+	// VOIDCREW EDIT CHANGE - original branched on `ordering_private` while everything else in
+	// this proc uses `is_ordering_private`, so a buyer with no cargo access was quoted against
+	// the budget's balance and then charged their own. Ask the seam that ui_act() bills.
+	var/datum/bank_account/quoted_account = market_account(used_id_card, is_ordering_private)
+	var/balance = quoted_account?.account_balance || 0
 
 	//is market crashing
 	var/market_crashing = FALSE
@@ -230,7 +255,7 @@
 	.["materials"] = material_data
 	.["creditBalance"] = balance
 	.["orderBalance"] = current_cost
-	.["orderingPrive"] = ordering_private
+	.["orderingPrive"] = is_ordering_private // VOIDCREW EDIT CHANGE - original: `ordering_private`, same mismatch as the balance above
 	.["canOrderCargo"] = can_buy_via_budget
 	.["updateTime"] = SSstock_market.next_fire - world.time
 
@@ -245,17 +270,18 @@
 	if(isnull(used_id_card))
 		say("No ID Found")
 		return
-	var/can_buy_via_budget = (ACCESS_CARGO in used_id_card?.GetAccess())
+	var/can_buy_via_budget = can_order_on_budget(used_id_card)
 
 	//if multiple users open the UI some of them may not have the required access so we recheck
-	var/is_ordering_private = ordering_private
-	if(!can_buy_via_budget) //no cargo access then force private purchase
-		is_ordering_private = TRUE
+	var/is_ordering_private = ordering_privately(used_id_card)
 
 	switch(action)
 		if("buy")
 			var/material_str = params["material"]
-			var/quantity = text2num(params["quantity"])
+			var/quantity = isnum(params["quantity"]) ? params["quantity"] : text2num(params["quantity"])
+			if(!valid_cargo_order_quantity(quantity, MAX_STACK_SIZE * MAX_STACK_LIMIT))
+				say("Order a whole number of sheets, from 1 to [MAX_STACK_SIZE * MAX_STACK_LIMIT].")
+				return FALSE
 
 			//find material from its name
 			var/datum/material/material_bought
@@ -265,17 +291,13 @@
 					material_bought = mat
 					break
 			if(!material_bought)
-				CRASH("Invalid material name passed to materials market!")
+				return FALSE
 			sheet_to_buy = initial(material_bought.sheet_type)
 			if(!sheet_to_buy)
 				CRASH("Material with no sheet type being sold on materials market!")
 
 			//get available bank account for purchasing
-			var/datum/bank_account/account_payable
-			if(is_ordering_private)
-				account_payable = used_id_card.registered_account
-			else if(can_buy_via_budget)
-				account_payable = SSeconomy.get_dep_account(ACCOUNT_CAR)
+			var/datum/bank_account/account_payable = market_account(used_id_card, is_ordering_private)
 			if(!account_payable)
 				say("No bank account detected!")
 				return
@@ -294,18 +316,16 @@
 			// We want to count how many stacks of all sheets we're ordering to make sure they don't exceed the limit of 10
 			// If we already have a custom order on SSshuttle, we should add the things to order to that order
 			var/datum/supply_order/current_order = find_order(living_user, is_ordering_private)
+			var/list/proposed_contents = current_order ? current_order.pack.contains.Copy() : list()
+			proposed_contents[sheet_to_buy] += quantity
+			if(!valid_material_order_contents(proposed_contents))
+				say("One material order can contain at most [MAX_STACK_LIMIT] stacks across all materials.")
+				return FALSE
 			if(!isnull(current_order))
 				// Check if this order exceeded the market limit
 				var/prior_sheets = current_order.pack.contains[sheet_to_buy]
 				if(prior_sheets + quantity > SSstock_market.materials_quantity[material_bought] )
 					say("There aren't enough sheets on the market! Please wait for more sheets to be traded before adding more.")
-					playsound(usr, 'sound/machines/synth/synth_no.ogg', 35, FALSE)
-					return
-
-				// Check if the order exceeded the purchase limit
-				var/prior_stacks = ROUND_UP(prior_sheets / MAX_STACK_SIZE)
-				if(prior_stacks >= MAX_STACK_LIMIT)
-					say("There are already 10 stacks of sheets on order! Please wait for them to arrive before ordering more.")
 					playsound(usr, 'sound/machines/synth/synth_no.ogg', 35, FALSE)
 					return
 
@@ -343,8 +363,14 @@
 				qdel(new_order)
 				return
 
+			// VOIDCREW EDIT CHANGE - original: `SSshuttle.shopping_list += new_order`. The seam
+			// says no by returning null, and has already told the buyer why.
+			var/list/order_list = get_order_list(announce_refusal = TRUE)
+			if(isnull(order_list))
+				qdel(new_order)
+				return
 			say("Thank you for your purchase! It will arrive on the next cargo shuttle!")
-			SSshuttle.shopping_list += new_order
+			order_list += new_order
 			return TRUE
 
 		if("toggle_budget")
@@ -356,7 +382,10 @@
 		if("clear")
 			var/datum/supply_order/current_order = find_order(living_user, is_ordering_private)
 			if(!isnull(current_order))
-				SSshuttle.shopping_list -= current_order
+				var/list/order_list = get_order_list() // VOIDCREW EDIT CHANGE - original: `SSshuttle.shopping_list`
+				if(isnull(order_list))
+					return
+				order_list -= current_order
 				qdel(current_order)
 				return TRUE
 
@@ -395,7 +424,7 @@
 /obj/item/stock_block/proc/update_value()
 	if(!SSstock_market.materials_prices[export_mat])
 		return
-	export_value = quantity * SSstock_market.materials_prices[export_mat]
+	export_value = quantity * (export_mat == /datum/material/plasma ? plasma_export_bid() : SSstock_market.materials_prices[export_mat])
 	icon_state = "stock_block_liquid"
 	update_appearance(UPDATE_ICON_STATE)
 	visible_message(span_warning("\The [src] becomes liquid!"))

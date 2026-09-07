@@ -58,7 +58,7 @@
 	mob_spawner = /obj/effect/mob_spawn/corpse/human/pirate/faction/silverscale/highlord
 	corpse = /obj/effect/mob_spawn/corpse/human/pirate/faction/silverscale/highlord
 	r_hand = /obj/item/melee/energy/sword/pirate
-	loot_pool = list(/obj/item/melee/energy/sword/pirate, /obj/item/clothing/suit/hooded/cloak/drake, /obj/item/clothing/head/hooded/cloakhood/drake)
+	loot_pool = list(/obj/item/claymore/cutlass, /obj/item/clothing/suit/hooded/cloak/drake, /obj/item/clothing/head/hooded/cloakhood/drake)
 	plunder_credits = 3000
 
 /mob/living/basic/trooper/pirate/faction/boss/silverscale/Initialize(mapload)
@@ -199,8 +199,8 @@
 	attack_verb_simple = "audit"
 	attack_sound = 'sound/items/weapons/blade1.ogg'
 	attack_vis_effect = ATTACK_EFFECT_PUNCH
-	mob_spawner = /obj/effect/mob_spawn/corpse/human/pirate/faction/irs/captain
-	corpse = /obj/effect/mob_spawn/corpse/human/pirate/faction/irs/captain
+	mob_spawner = /obj/effect/mob_spawn/corpse/human/pirate/faction/irs/chief
+	corpse = /obj/effect/mob_spawn/corpse/human/pirate/faction/irs/chief
 	r_hand = /obj/item/gun/energy/e_gun/lethal
 	loot_pool = list(/obj/item/gun/energy/e_gun/nuclear, /obj/item/storage/bag/money/dutchmen)
 	plunder_credits = 3000

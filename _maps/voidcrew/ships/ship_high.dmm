@@ -1,4 +1,12 @@
 //MAP CONVERTED BY dmm2tgm.py THIS HEADER COMMENT PREVENTS RECONVERSION, DO NOT REMOVE
+"aa" = (
+/obj/effect/landmark/event_spawn,
+/turf/open/floor/iron/dark,
+/area/shuttle/voidcrew/high/hallway/main)
+"ab" = (
+/obj/effect/landmark/event_spawn,
+/turf/open/floor/iron/dark,
+/area/shuttle/voidcrew/high/cargo_bay)
 "ar" = (
 /obj/item/storage/medkit,
 /turf/open/floor/bamboo,
@@ -608,7 +616,7 @@
 /turf/closed/wall,
 /area/shuttle/voidcrew/high/bridge/reception)
 "mO" = (
-/obj/machinery/atmospherics/components/unary/vent_pump/siphon/layer4{
+/obj/machinery/atmospherics/components/unary/vent_pump/siphon/layer2{
 	dir = 8
 	},
 /turf/open/floor/plating,
@@ -2240,7 +2248,7 @@
 /turf/open/floor/plating,
 /area/shuttle/voidcrew/high/engineering)
 "Sh" = (
-/obj/machinery/atmospherics/components/unary/vent_pump/layer2{
+/obj/machinery/atmospherics/components/unary/vent_pump/layer4{
 	dir = 8
 	},
 /turf/open/floor/plating,
@@ -2718,7 +2726,7 @@ WH
 wq
 vp
 za
-za
+ab
 MW
 Hu
 Hu
@@ -2871,7 +2879,7 @@ AO
 QM
 cW
 dK
-jQ
+aa
 kv
 DP
 KD

@@ -11,24 +11,24 @@
 /turf/open/floor/plating,
 /area/ruin/powered)
 "dR" = (
-/obj/effect/decal/cleanable/robot_debris/old,
+/obj/effect/decal/cleanable/blood/gibs/robot_debris,
 /obj/effect/decal/cleanable/blood/old,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "eD" = (
 /obj/structure/flora/junglebush/c,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "eS" = (
 /obj/structure/flora/ausbushes/fullgrass,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "gA" = (
 /turf/template_noop,
 /area/template_noop)
 "iV" = (
 /obj/structure/flora/grass/jungle,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "jb" = (
 /obj/structure/closet/firecloset,
@@ -36,20 +36,20 @@
 /area/ruin/powered)
 "jx" = (
 /obj/effect/decal/cleanable/plasma,
-/obj/effect/decal/cleanable/oil/slippery,
+/obj/effect/decal/cleanable/blood/oil/slippery,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "jB" = (
 /obj/structure/flora/tree/jungle/small,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "jZ" = (
 /obj/structure/flora/ausbushes/reedbush,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "ka" = (
 /obj/structure/flora/junglebush,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "lk" = (
 /obj/effect/decal/cleanable/dirt,
@@ -57,8 +57,9 @@
 /area/ruin/powered)
 "lZ" = (
 /obj/effect/decal/cleanable/plasma,
-/obj/effect/decal/cleanable/oil/slippery,
+/obj/effect/decal/cleanable/blood/oil/slippery,
 /obj/effect/decal/cleanable/dirt,
+/obj/effect/zone_mobs/robot,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "mb" = (
@@ -79,7 +80,7 @@
 /area/ruin/powered)
 "ru" = (
 /obj/structure/table/reinforced,
-/obj/item/clothing/under/costume/mech_suit/white,
+/obj/item/clothing/under/costume/mech_suit,
 /obj/effect/decal/cleanable/dirt,
 /turf/open/floor/plating,
 /area/ruin/powered)
@@ -95,7 +96,7 @@
 /area/ruin/powered)
 "va" = (
 /obj/structure/flora/ausbushes/grassybush,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "xb" = (
 /obj/machinery/power/port_gen/pacman,
@@ -105,7 +106,7 @@
 /area/ruin/powered)
 "xt" = (
 /obj/structure/flora/junglebush/b,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "xY" = (
 /turf/closed/wall/rust,
@@ -150,7 +151,7 @@
 /turf/open/floor/plating,
 /area/ruin/powered)
 "Jd" = (
-/obj/effect/decal/cleanable/oil/slippery,
+/obj/effect/decal/cleanable/blood/oil/slippery,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "LS" = (
@@ -170,6 +171,7 @@
 "Qm" = (
 /obj/item/weldingtool/hugetank,
 /obj/effect/decal/cleanable/dirt,
+/obj/structure/closet/crate/zone_loot/industrial,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "Qo" = (
@@ -198,13 +200,13 @@
 /turf/open/floor/plating,
 /area/ruin/powered)
 "UT" = (
-/obj/mecha/working/ripley,
-/turf/open/floor/mech_bay_recharge_floor,
+/obj/vehicle/sealed/mecha/ripley,
+/turf/open/floor/iron/dark,
 /area/ruin/powered)
 "Vj" = (
 /obj/structure/flora/ausbushes/sparsegrass,
 /obj/effect/decal/remains/human,
-/turf/open/misc/dirt,
+/turf/open/misc/dirt/jungle,
 /area/ruin/unpowered)
 "VH" = (
 /obj/machinery/mech_bay_recharge_port,
@@ -225,13 +227,13 @@
 /area/ruin/powered)
 "Xy" = (
 /obj/structure/cable,
-/obj/effect/decal/cleanable/robot_debris,
+/obj/effect/decal/cleanable/blood/gibs/robot_debris,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "XF" = (
 /obj/effect/decal/cleanable/plasma,
 /obj/effect/decal/cleanable/dirt,
-/obj/structure/mecha_wreckage/ripley/mkii,
+/obj/structure/mecha_wreckage/ripley/mk2,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "Yi" = (
@@ -240,7 +242,7 @@
 /area/ruin/powered)
 "YQ" = (
 /obj/structure/table/reinforced,
-/obj/item/clothing/under/costume/mech_suit/blue,
+/obj/item/clothing/under/costume/mech_suit,
 /turf/open/floor/plating,
 /area/ruin/powered)
 "Zc" = (

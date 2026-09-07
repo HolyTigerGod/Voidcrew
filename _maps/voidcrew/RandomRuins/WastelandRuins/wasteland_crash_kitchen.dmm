@@ -3,30 +3,27 @@
 /obj/structure/table/reinforced,
 /obj/item/storage/fancy/donut_box,
 /obj/machinery/door/firedoor,
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /obj/machinery/door/poddoor/shutters,
 /turf/open/floor/iron,
 /area/ruin/unpowered)
 "br" = (
-/obj/structure/sign/donk{
-	pixel_y = 32
-	},
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "cl" = (
 /obj/machinery/atmospherics/components/unary/vent_pump/on/layer2{
 	dir = 8
 	},
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "dr" = (
@@ -36,12 +33,12 @@
 /obj/structure/extinguisher_cabinet,
 /obj/structure/girder,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "fE" = (
 /obj/structure/curtain/bounty,
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 1
 	},
 /turf/open/floor/eighties,
@@ -51,12 +48,12 @@
 /area/ruin/unpowered)
 "gg" = (
 /turf/open/floor/plating{
-	icon_state = "platingdmg2"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "gO" = (
 /obj/structure/table,
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "gS" = (
 /obj/structure/chair{
@@ -66,7 +63,7 @@
 	dir = 1;
 	pixel_y = -24
 	},
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "im" = (
 /obj/structure/curtain/bounty,
@@ -77,34 +74,29 @@
 /area/template_noop)
 "ju" = (
 /obj/structure/cable,
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2,
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2,
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 1
 	},
-/turf/open/floor/carpet/nanoweave/purple,
-/area/ruin/unpowered)
-"jX" = (
-/turf/open/floor/plating{
-	icon_state = "platingdmg1"
-	},
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "lN" = (
 /obj/structure/table/reinforced,
-/obj/item/reagent_containers/food/condiment/saltshaker{
+/obj/item/reagent_containers/condiment/saltshaker{
 	pixel_x = -6;
 	pixel_y = 2
 	},
-/obj/item/reagent_containers/food/condiment/peppermill{
+/obj/item/reagent_containers/condiment/peppermill{
 	pixel_y = 2
 	},
 /obj/machinery/door/firedoor,
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /obj/machinery/door/poddoor/shutters,
@@ -116,7 +108,7 @@
 /obj/structure/table,
 /obj/item/circuitboard/machine/chem_dispenser/drinks/beer,
 /turf/open/floor/plating{
-	icon_state = "platingdmg2"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "pa" = (
@@ -126,28 +118,28 @@
 /obj/machinery/atmospherics/components/unary/vent_pump/on/layer2{
 	dir = 4
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
 /area/ruin/unpowered)
 "sI" = (
-/mob/living/simple_animal/hostile/asteroid/goliath/beast{
+/mob/living/basic/mining/goliath{
 	dir = 4
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "sQ" = (
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "sV" = (
@@ -160,7 +152,7 @@
 	pixel_x = -2;
 	pixel_y = 2
 	},
-/obj/item/reagent_containers/glass/beaker/large{
+/obj/item/reagent_containers/cup/beaker/large{
 	pixel_x = 6;
 	pixel_y = 6
 	},
@@ -168,24 +160,24 @@
 	dir = 4;
 	pixel_x = -28
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
 /area/ruin/unpowered)
 "tI" = (
 /obj/structure/cable,
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2,
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2,
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 1
 	},
-/obj/structure/sign/solgov_seal{
+/obj/structure/sign/logo{
 	pixel_x = -27;
 	pixel_y = 0
 	},
@@ -201,33 +193,33 @@
 "vc" = (
 /obj/structure/cable,
 /obj/machinery/light,
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2{
 	dir = 4
 	},
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 4
 	},
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "wq" = (
-/mob/living/simple_animal/hostile/asteroid/goliath/beast{
+/mob/living/basic/mining/goliath{
 	dir = 8
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg2"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "wG" = (
 /obj/structure/girder,
 /obj/structure/girder,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "xh" = (
 /obj/structure/girder,
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "xi" = (
@@ -237,17 +229,17 @@
 "xD" = (
 /obj/structure/table,
 /obj/item/storage/bag/tray,
-/obj/item/reagent_containers/food/drinks/shaker,
-/obj/item/reagent_containers/glass/rag,
-/obj/item/reagent_containers/food/condiment/enzyme,
-/obj/item/kitchen/knife,
-/obj/effect/turf_decal/corner/white{
+/obj/item/reagent_containers/cup/glass/shaker,
+/obj/item/rag,
+/obj/item/reagent_containers/condiment/enzyme,
+/obj/item/knife/kitchen,
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
@@ -261,8 +253,8 @@
 /obj/machinery/door/firedoor/border_only{
 	dir = 1
 	},
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2,
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2,
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 1
 	},
 /turf/open/floor/wood,
@@ -275,22 +267,32 @@
 /obj/machinery/door/firedoor/border_only{
 	dir = 8
 	},
-/turf/open/floor/plasteel/tech/grid,
+/turf/open/floor/iron/dark,
 /area/ruin/unpowered)
 "yE" = (
 /obj/structure/sign/warning/docking,
 /turf/closed/wall/mineral/titanium,
+/area/ruin/unpowered)
+"zy" = (
+/obj/effect/zone_mobs/wildlife,
+/turf/open/floor/plating{
+	burnt = 1
+	},
+/area/ruin/unpowered)
+"zz" = (
+/obj/structure/closet/crate/zone_loot/plunder,
+/turf/open/floor/plating,
 /area/ruin/unpowered)
 "Al" = (
 /obj/structure/window/reinforced/tinted/frosted{
 	dir = 1
 	},
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "DF" = (
-/obj/machinery/door/window/westleft,
+/obj/machinery/door/window/left/directional/west,
 /obj/structure/sink{
 	dir = 8;
 	pixel_x = 12
@@ -303,19 +305,19 @@
 "Fq" = (
 /obj/item/electronics/apc,
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "Hv" = (
 /obj/structure/table,
 /obj/machinery/chem_dispenser/drinks,
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
@@ -324,7 +326,7 @@
 /obj/structure/chair{
 	dir = 8
 	},
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "HV" = (
 /obj/structure/curtain,
@@ -335,7 +337,7 @@
 	dir = 8
 	},
 /obj/item/soap,
-/mob/living/simple_animal/hostile/asteroid/goliath/beast{
+/mob/living/basic/mining/goliath{
 	dir = 4
 	},
 /turf/open/floor/iron/white,
@@ -345,10 +347,10 @@
 	dir = 8
 	},
 /obj/structure/cable,
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2{
 	dir = 5
 	},
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 1
 	},
 /turf/open/floor/wood,
@@ -363,12 +365,12 @@
 	pixel_y = 4
 	},
 /obj/effect/decal/cleanable/blood/gibs,
-/obj/item/gun/ballistic/automatic/pistol/commander{
+/obj/item/gun/ballistic/automatic/pistol/m1911{
 	pixel_y = 7
 	},
-/obj/effect/mob_spawn/human/corpse/assistant,
+/obj/effect/mob_spawn/corpse/human/assistant,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "Mi" = (
@@ -378,19 +380,19 @@
 "Nb" = (
 /obj/structure/girder,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "QS" = (
 /obj/structure/chair/comfy/teal,
-/obj/machinery/airalarm/all_access{
+/obj/machinery/airalarm{
 	pixel_y = 24
 	},
 /turf/open/floor/wood,
 /area/ruin/unpowered)
 "Rt" = (
-/obj/effect/spawner/structure/window/shuttle,
-/obj/machinery/door/firedoor/window,
+/obj/effect/spawner/structure/window/reinforced/shuttle,
+/obj/machinery/door/firedoor,
 /obj/structure/grille,
 /obj/machinery/door/poddoor/shutters/preopen{
 	id = "sgwindowshut";
@@ -402,49 +404,46 @@
 /obj/structure/lattice,
 /obj/structure/girder,
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "Sh" = (
 /obj/machinery/light/small{
 	dir = 4
 	},
-/obj/machinery/door/window/westright,
+/obj/machinery/door/window/right/directional/west,
 /obj/structure/window/reinforced/spawner,
 /obj/machinery/atmospherics/components/binary/pump/layer2,
 /turf/open/floor/plating{
-	icon_state = "platingdmg1"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "Te" = (
 /obj/structure/table,
 /obj/machinery/microwave,
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
 /area/ruin/unpowered)
 "TX" = (
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2{
 	dir = 9
 	},
 /obj/machinery/atmospherics/components/unary/vent_pump/siphon/layer4{
 	dir = 8
 	},
 /obj/item/oar,
-/obj/machinery/advanced_airlock_controller{
-	pixel_y = -24
-	},
-/obj/structure/closet/emcloset/wall{
+/obj/structure/closet/emcloset/anchored{
 	pixel_x = 32
 	},
-/turf/open/floor/plasteel/tech,
+/turf/open/floor/iron/dark,
 /area/ruin/unpowered)
 "TZ" = (
 /obj/machinery/door/airlock/public/glass,
@@ -455,27 +454,27 @@
 /obj/machinery/door/firedoor/border_only{
 	dir = 4
 	},
-/obj/machinery/atmospherics/pipe/simple/supply/hidden/layer2{
+/obj/machinery/atmospherics/pipe/smart/simple/supply/hidden/layer2{
 	dir = 4
 	},
-/obj/machinery/atmospherics/pipe/simple/scrubbers/hidden/layer4{
+/obj/machinery/atmospherics/pipe/smart/simple/scrubbers/hidden/layer4{
 	dir = 4
 	},
-/turf/open/floor/plasteel/tech/grid,
+/turf/open/floor/iron/dark,
 /area/ruin/unpowered)
 "UA" = (
 /obj/machinery/gibber,
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/plating{
-	icon_state = "panelscorched"
+	burnt = 1
 	},
 /area/ruin/unpowered)
 "Vn" = (
@@ -483,10 +482,10 @@
 /obj/machinery/atmospherics/pipe/smart/manifold4w/scrubbers/hidden/layer4{
 	dir = 1
 	},
-/obj/machinery/atmospherics/pipe/manifold/supply/hidden/layer2{
+/obj/machinery/atmospherics/pipe/smart/manifold/supply/hidden/layer2{
 	dir = 1
 	},
-/turf/open/floor/carpet/nanoweave/purple,
+/turf/open/floor/carpet/purple,
 /area/ruin/unpowered)
 "Vy" = (
 /obj/structure/table,
@@ -500,30 +499,30 @@
 	dir = 1;
 	network = list("cricket")
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 1
 	},
-/obj/effect/turf_decal/corner/white{
+/obj/effect/turf_decal/tile/neutral{
 	dir = 2
 	},
-/obj/effect/turf_decal/corner/bar/diagonal{
+/obj/effect/turf_decal/tile/bar/diagonal_edge{
 	dir = 4
 	},
 /turf/open/floor/iron,
 /area/ruin/unpowered)
 "VG" = (
-/obj/machinery/atmospherics/components/unary/tank/air{
+/obj/machinery/atmospherics/components/tank{
 	piping_layer = 2
 	},
-/obj/structure/window/reinforced/spawner/west,
+/obj/structure/window/reinforced/spawner/directional/west,
 /obj/machinery/camera/autoname{
 	dir = 8;
 	network = list("cricket")
 	},
-/turf/open/floor/plasteel/tech,
+/turf/open/floor/iron/dark,
 /area/ruin/unpowered)
 "WP" = (
-/mob/living/simple_animal/hostile/asteroid/goliath/beast{
+/mob/living/basic/mining/goliath{
 	dir = 4
 	},
 /turf/open/floor/plating,
@@ -537,7 +536,7 @@ uM
 uM
 uM
 wq
-jX
+gg
 sQ
 uM
 uM
@@ -590,7 +589,7 @@ tm
 Te
 xh
 sQ
-jX
+gg
 gS
 dr
 QS
@@ -614,7 +613,7 @@ dr
 Fq
 ga
 Al
-jX
+gg
 KR
 uM
 uM
@@ -622,11 +621,11 @@ uM
 (6,1,1) = {"
 Rt
 me
-jX
+gg
 Lz
 aq
-sQ
-jX
+zy
+gg
 HU
 pa
 HV
@@ -640,7 +639,7 @@ ut
 (7,1,1) = {"
 Mi
 Hv
-KR
+zz
 Vy
 dr
 br
@@ -662,8 +661,8 @@ pa
 xi
 wG
 gg
-jX
-jX
+gg
+gg
 sQ
 Nb
 uM

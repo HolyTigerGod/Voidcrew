@@ -18,6 +18,14 @@
 /// Base credits awarded at round end
 #define ROUND_END_BASE_CREDITS 100
 
+/// Ship parts awarded at round end just for having played a character.
+/// This is the progression FLOOR, not the main faucet - the bulk of a player's
+/// parts should still come from loot caches, bounties, the contested cache and
+/// Colosseum spoils, all of which have to be carried home in an extraction case.
+/// Keep this small enough that winning an event is still worth more than
+/// showing up. See the faucet notes in ship_upgrades/MAPPER_GUIDE.md.
+#define ROUND_END_PARTICIPATION_PARTS 1
+
 /**
  * Gives credits at round end
  * Parts are extracted separately via the extraction system
@@ -39,6 +47,32 @@
 		to_chat(src, span_notice("You have earned [credits_earned] ship credits for completing the round!"))
 	else
 		to_chat(src, span_warning("Failed to receive your credit reward. Please contact an admin."))
+
+/**
+ * Grants the round-end participation part.
+ *
+ * Unlike every other part source this is a direct account grant: it does not
+ * ride an extraction case and cannot be stolen, because its whole job is to
+ * guarantee that a round which went badly still moved the player forward. The
+ * class is rolled at random, so the floor still leaves class scarcity intact -
+ * you can't farm it toward one specific hull.
+ *
+ * Gated on GLOB.joined_player_list, which the ticker fills at roundstart
+ * (ticker.dm) and new_player.dm fills on latejoin. Lobby observers who never
+ * took a character are not in it and get nothing.
+ */
+/client/proc/give_round_end_participation_parts()
+	if(!ckey)
+		return
+	if(!(ckey in GLOB.joined_player_list))
+		return
+
+	var/part_class = pick(GLOB.ship_part_classes)
+	if(!GLOB.ship_economy_db?.add_part(ckey, part_class, ROUND_END_PARTICIPATION_PARTS, "round_end_participation"))
+		to_chat(src, span_warning("Failed to receive your participation ship part. Please contact an admin."))
+		return
+
+	to_chat(src, span_notice("Salvage rights on this tour paid out [ROUND_END_PARTICIPATION_PARTS] [part_class] ship part[ROUND_END_PARTICIPATION_PARTS > 1 ? "s" : ""], added to your account."))
 
 /**
  * Returns the player's current credit balance
@@ -135,6 +169,18 @@
 	if(!ckey || !part_class)
 		return FALSE
 
+	// Parts balances are keyed by ckey and survive death, ghosting and the round itself,
+	// so without this a ghost could stand anywhere and drop parts on the deck out of an
+	// account it banked in an earlier round - which is what "MR BEAAST giving out free
+	// combat parts" was. Both callers need it: the verb is a /client/verb, so BYOND hangs
+	// it on the IC tab for every mob state including observer and lobby, and the N
+	// keybinding wrapper's own isliving() check does not cover the verb.
+	// The loc half matters too: from the lobby mob.loc is null, so the part spawned into
+	// nullspace after spend_parts() had already debited the account.
+	if(!isliving(mob) || isnull(mob.loc))
+		to_chat(src, span_warning("You need to be alive and somewhere physical to withdraw a part!"))
+		return FALSE
+
 	if(!(part_class in GLOB.ship_part_classes))
 		to_chat(src, span_warning("Invalid part class!"))
 		return FALSE
@@ -179,6 +225,12 @@
 
 	if(!ckey)
 		to_chat(src, span_warning("Unable to identify your account!"))
+		return
+
+	// Mirrors request_extraction_case() below. withdraw_ship_part() refuses as well, but
+	// fail here so a ghost is told why instead of being walked through the part picker.
+	if(!isliving(mob))
+		to_chat(src, span_warning("You need to be alive to withdraw a part!"))
 		return
 
 	var/list/parts = GLOB.ship_economy_db?.get_parts(ckey)
@@ -227,7 +279,7 @@
 	// Spawn the case
 	var/obj/item/storage/briefcase/secure/extraction/extraction_case = new(player.loc)
 	if(extraction_case)
-		to_chat(src, span_notice("An extraction case has been provided. Store ship parts inside to extract them on bluespace jump or round end!"))
+		to_chat(src, span_notice("An extraction case has been provided. Put ship parts inside and pick it up before a bluespace jump or round end. Carrying it inside a backpack counts; the current carrier receives the parts."))
 		to_chat(src, span_warning("Warning: This case can be stolen, hacked, or broken into with an EMAG!"))
 	else
 		to_chat(src, span_warning("Failed to create case. Please try again."))

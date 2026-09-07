@@ -8,7 +8,8 @@
  * - HAILING: Hailing target, waiting for them to answer (20 sec grace period)
  * - ENGAGING: Acquiring weapon lock on target
  * - COMBAT: Actively firing weapons and using interdictor
- * - SIPHONING: Yellow zone - interdict + siphon only (no weapons/boarding)
+ * - SIPHONING: Yellow zone - interdict + siphon only (no weapons/boarding).
+ *              Reached only after a hail the crew ignored, refused or stalled out.
  * - RETREATING: All weapons destroyed, trying to escape
  * - NEGOTIATING: In active negotiation with target, combat paused
  *
@@ -25,7 +26,9 @@
 	if(!istype(controller))
 		return
 
-	// Don't run combat AI when the ship isn't flying (docked, crashed, etc.)
+	// Don't run combat AI when the ship isn't flying (docked, crashed, etc.).
+	// The movement subtree owns getting back to flight: it logs the park and queues
+	// undock_recovery, so a berthed ship is quiet here but not permanently dead.
 	var/obj/structure/overmap/ship/npc/ship = controller.get_ship()
 	if(!ship || ship.state != OVERMAP_SHIP_FLYING)
 		return
@@ -42,6 +45,8 @@
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/hailing)
 		// Still check disengage in case target escapes
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/check_disengage)
+		// No point demanding tribute from a ship whose crew died mid-call
+		controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 		return
 
 	// Siphoning ships interdict + siphon only (yellow zone economic threat, no weapons/boarding)
@@ -58,22 +63,31 @@
 
 	// ========== BOARDING PHASE STATES ==========
 
+	// These phases skip check_disengage, so check docking before interdiction
+	// or wave monitoring can continue an encounter after the target leaves flight.
+	if(combat_state == NPC_COMBAT_BOARDING || combat_state == NPC_COMBAT_BOARDING_COOLDOWN || combat_state == NPC_COMBAT_BOSS_PHASE)
+		if(!controller.validate_boarding_target())
+			return
+
 	// Active boarding wave - monitor the wave
 	if(combat_state == NPC_COMBAT_BOARDING)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/use_interdictor)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/boarding_wave_monitor)
+		controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 		return
 
 	// Cooldown between waves - wait for timer
 	if(combat_state == NPC_COMBAT_BOARDING_COOLDOWN)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/use_interdictor)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/boarding_cooldown_monitor)
+		controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 		return
 
 	// Boss phase - wait for boss to be killed
 	if(combat_state == NPC_COMBAT_BOSS_PHASE)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/use_interdictor)
 		controller.queue_behavior(/datum/ai_behavior/npc_ship/boss_phase_monitor)
+		controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 		return
 
 	// Ship disabled - do nothing, wait for players to board
@@ -99,11 +113,13 @@
 			controller.queue_behavior(/datum/ai_behavior/npc_ship/scan_wealth)
 			// Still check disengage in case target escapes during scan
 			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_disengage)
+			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 			return
 
 		if(NPC_COMBAT_ENGAGING)
 			controller.queue_behavior(/datum/ai_behavior/npc_ship/acquire_lock)
 			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_weapons)
+			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 
 		if(NPC_COMBAT_COMBAT)
 			// ACTION PRIORITY SYSTEM: Pick ONE offensive action per tick instead of all three
@@ -120,6 +136,8 @@
 					controller.queue_behavior(/datum/ai_behavior/npc_ship/activate_siphon)
 			// Always check weapons status
 			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_weapons)
+			// Pods fired in this state can finish a crew off - notice when they have
+			controller.queue_behavior(/datum/ai_behavior/npc_ship/check_crew_wipe)
 
 	// Always check if we should disengage (target out of range)
 	controller.queue_behavior(/datum/ai_behavior/npc_ship/check_disengage)
@@ -181,8 +199,13 @@
 	if(target && !target.is_interdicted)
 		action_weights[NPC_ACTION_USE_INTERDICTOR] = 25
 
-	// Siphon is available if ship has siphon goals (weight: 15)
-	if(ship?.siphon_goal_percent > 0)
+	// Siphon is available if ship has siphon goals (weight: 15) - but never in the red
+	// band. The siphon is the yellow-band mugging tool; red settles it with guns and
+	// boarders (acquire_lock and hail_escalates_to_siphon gate on the same check).
+	// Without this, a red-zone pirate that rolled the siphon skimmed its goal and then
+	// ended the whole fight via on_goal_reached()'s retreat - and retreating ships
+	// ignore further player aggression entirely.
+	if(ship?.siphon_goal_percent > 0 && !controller.is_red_zone_raid())
 		action_weights[NPC_ACTION_ACTIVATE_SIPHON] = 15
 
 	// If only weapons available, just return that

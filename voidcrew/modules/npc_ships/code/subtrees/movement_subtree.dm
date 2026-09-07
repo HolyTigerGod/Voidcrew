@@ -19,9 +19,30 @@
 		return
 
 	var/obj/structure/overmap/ship/npc/ship = controller.pawn
+	if(!ship)
+		return
 
-	// Don't run movement AI when the ship isn't flying (docked, crashed, etc.)
-	if(!ship || ship.state != OVERMAP_SHIP_FLYING)
+	// Ship isn't flying (docked, crashed, mid-manoeuvre): normal movement stands down,
+	// but the AI must not go silent over it - note the park (one log line) and, if the
+	// ship is sitting berthed, run the recovery behavior that will eventually undock it
+	// back into open flight. Without this, one player force-dock permanently killed the
+	// ship's AI: nothing else in the game ever returns an NPC hull to FLYING.
+	if(ship.state != OVERMAP_SHIP_FLYING)
+		controller.note_ai_parked()
+		if(ship.state == OVERMAP_SHIP_IDLE)
+			controller.queue_behavior(/datum/ai_behavior/npc_ship/undock_recovery)
+		// DOCKING/UNDOCKING/ACTING are transitional; stalls there are reconciled by
+		// check_manoeuvre_stalled() on SSovermap's poll, so just wait them out.
+		return
+	controller.note_ai_recovered()
+
+	// Thruster bank shot out: the hull is dead in the water exactly like a player ship
+	// with no working engines, so queue no movement behavior at all. Doing it here rather
+	// than inside each behavior means a crippled pirate stops re-planning a chase it
+	// cannot take every couple of seconds; the combat subtree is separate, so it keeps
+	// fighting from where it sits. update_boarding_state() has already flagged it
+	// boardable, which is how a bounty hull becomes catchable once de-thrustered.
+	if(!ship.can_move_under_own_power())
 		return
 
 	var/movement_mode = controller.blackboard[BB_NPC_MOVEMENT_MODE] || NPC_MOVEMENT_PATROL

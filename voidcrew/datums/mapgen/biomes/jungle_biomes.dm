@@ -1,5 +1,5 @@
 /datum/biome/jungle
-	open_turf_types = list(/turf/open/misc/grass/jungle/lit = 1)
+	open_turf_types = list(/turf/open/misc/grass/jungle = 1)
 	flora_spawn_list = list(
 		/obj/structure/flora/grass/jungle = 1,
 		/obj/structure/flora/grass/jungle/b = 1,
@@ -13,35 +13,46 @@
 	flora_spawn_chance = 20
 	mob_spawn_chance = 0.3
 	mob_spawn_list = list(/mob/living/carbon/human/species/monkey = 5)
+	// Meaner tier for dangerous-zone planets (see dangerous_mob_spawn_list)
+	dangerous_mob_spawn_list = list(
+		/mob/living/basic/gorilla/beach = 3,
+		/mob/living/basic/spider/giant/tarantula = 1,
+	)
+	// Wild spice pods: the jungle export good; foraged off the ground and sold
+	// at the general store (see modules/trade/planetary_goods.dm)
+	feature_spawn_chance = 0.5
+	feature_spawn_list = list(/obj/item/stack/spice_pods = 1)
 
 /datum/biome/jungle/dense
 	flora_spawn_chance = 30
-	open_turf_types = list(/turf/open/misc/grass/jungle/lit = 1, /turf/open/misc/dirt/jungle/dark/lit = 9)
+	open_turf_types = list(/turf/open/misc/grass/jungle = 1, /turf/open/misc/dirt/jungle/dark = 9)
 	mob_spawn_chance = 0.6
 	mob_spawn_list = list(/mob/living/basic/gorilla/beach = 1, /mob/living/carbon/human/species/monkey = 3)
 
 /datum/biome/jungle/plains
-	open_turf_types = list(/turf/open/misc/grass/jungle/lit = 1)
+	open_turf_types = list(/turf/open/misc/grass/jungle = 1)
 	flora_spawn_chance = 7
 	mob_spawn_chance = 1
 	mob_spawn_list = list(/mob/living/carbon/human/species/monkey = 1)
 
 /datum/biome/mudlands
-	open_turf_types = list(/turf/open/misc/dirt/jungle/dark/lit = 1)
+	open_turf_types = list(/turf/open/misc/dirt/jungle/dark = 1)
 	flora_spawn_list = list(/obj/structure/flora/grass/jungle = 1, /obj/structure/flora/grass/jungle/b = 1, /obj/structure/flora/rock/jungle = 1)
 	flora_spawn_chance = 3
 	mob_spawn_chance = 0.05
 	mob_spawn_list = list(/mob/living/basic/spider/giant/tarantula = 1)
 
 /datum/biome/jungle_wasteland
-	open_turf_types = list(/turf/open/misc/dirt/jungle/wasteland/lit = 1)
+	open_turf_types = list(/turf/open/misc/dirt/jungle/wasteland = 1)
 
 /datum/biome/jungle/water
-	open_turf_types = list(/turf/open/water/jungle/lit = 1)
+	open_turf_types = list(/turf/open/water/jungle = 1)
 	mob_spawn_chance = 1
 	mob_spawn_list = list(/mob/living/basic/carp = 1)
+	dangerous_mob_spawn_list = null // no jungle land predators in the water
 	flora_spawn_chance = 1
 	flora_spawn_list = list(/obj/structure/flora/rock = 1)
+	feature_spawn_list = null // no ground pods in the water
 
 /datum/biome/cave/jungle
 	open_turf_types = list(/turf/open/misc/dirt/jungle = 10, /turf/open/misc/dirt/jungle/dark = 10)
@@ -59,6 +70,7 @@
 	)
 	mob_spawn_chance = 1
 	mob_spawn_list = list(/mob/living/basic/mining/wolf/random = 1, /mob/living/basic/bat = 1, /mob/living/basic/snake)
+	dangerous_mob_spawn_list = list(/mob/living/basic/spider/giant/tarantula = 1)
 	feature_spawn_chance = 1
 //	feature_spawn_list = list(/obj/item/pickaxe/rusted = 1, /obj/structure/closet/crate/grave/lead_researcher = 1, /obj/structure/closet/crate/grave = 1, /obj/item/shovel = 1, /obj/structure/closet/crate/secure/loot = 1)
 
@@ -102,7 +114,7 @@
 		///obj/structure/flora/ash/space/voidmelon = 1
 	)
 	mob_spawn_chance = 1
-	mob_spawn_list = list(/mob/living/basic/bee/toxin = 1, /mob/living/simple_animal/hostile/mushroom = 1, /mob/living/basic/slime/pet = 1)
+	mob_spawn_list = list(/mob/living/basic/bee/toxin = 1, /mob/living/basic/mushroom = 1, /mob/living/basic/slime/pet = 1)
 
 /datum/biome/cave/lush/bright
 	open_turf_types = list(/turf/open/misc/grass/jungle = 12, /turf/open/water/jungle = 1)

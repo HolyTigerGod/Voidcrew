@@ -20,11 +20,70 @@
 	/// Loaded coupons that can be applied to orders
 	var/list/obj/item/coupon/loaded_coupons
 
+	/// The cargo shuttle datum that last registered us as its linked_console - kept so
+	/// Destroy can sever that back-ref directly. Re-deriving the ship from position
+	/// fails mid-teardown (areas already swept), which left the datum pinning us.
+	var/datum/weakref/linked_shuttle_ref
+
+/obj/machinery/computer/voidcrew_cargo/Initialize(mapload)
+	. = ..()
+	//Mapped-in consoles have no multitool link yet, so adopt the ship's own bank machine.
+	//Deferred because the bank machine may not have initialized when we do.
+	return INITIALIZE_HINT_LATELOAD
+
+/obj/machinery/computer/voidcrew_cargo/LateInitialize()
+	. = ..()
+	// Consoles built in-round are on an already-registered ship, so this finds the bank
+	// straight away. Map-placed ones aren't - the hull hasn't been registered yet when
+	// its atoms initialize - and are caught by connect_to_shuttle() instead.
+	link_ship_bank(find_ship_bank())
+
+/**
+ * Called on every atom aboard a shuttle once its map has finished loading, with the
+ * port handed to us directly. This is the hook that links map-placed consoles: at
+ * LateInitialize() the ship isn't in SSshuttle.mobile_docking_ports yet, so
+ * get_containing_shuttle() can't find it. Mirrors the bank machine's own override.
+ */
+/obj/machinery/computer/voidcrew_cargo/connect_to_shuttle(mapload, obj/docking_port/mobile/port, obj/docking_port/stationary/dock)
+	. = ..()
+	link_ship_bank(find_ship_bank(port))
+
+/**
+ * Finds a bank machine aboard the same shuttle as this console.
+ * Used to auto-link mapped-in consoles; a multitool still overrides the choice.
+ */
+/obj/machinery/computer/voidcrew_cargo/proc/find_ship_bank(obj/docking_port/mobile/port)
+	if(!port)
+		port = SSshuttle.get_containing_shuttle(src)
+	if(!port)
+		return null
+	for(var/area/shuttle_area as anything in port.shuttle_areas)
+		for(var/obj/machinery/computer/bank_machine/bank in shuttle_area)
+			return bank
+	return null
+
+/// Adopts a bank machine as this console's account holder, unless one is already set.
+/obj/machinery/computer/voidcrew_cargo/proc/link_ship_bank(obj/machinery/computer/bank_machine/bank)
+	if(bank_account_holder || !bank)
+		return
+	bank_account_holder = bank
+	RegisterSignal(bank, COMSIG_QDELETING, PROC_REF(on_bank_deletion))
+
 /obj/machinery/computer/voidcrew_cargo/Destroy()
 	if(bank_account_holder)
 		on_bank_deletion(bank_account_holder)
-	QDEL_LIST(checkout_list)
+	if(!cart_outpost_ref)
+		QDEL_LIST(checkout_list)
+	cart_outpost_ref = null
+	checkout_list = null
 	QDEL_LAZYLIST(loaded_coupons)
+	// The ship's cargo shuttle datum outlives its consoles; its linked_console
+	// back-ref is otherwise only cleared in the datum's own Destroy. Prefer the
+	// stored handle - positional lookup fails once the teardown sweep is underway.
+	var/datum/voidcrew_cargo_shuttle/cargo_shuttle = linked_shuttle_ref?.resolve() || get_cargo_shuttle()
+	if(cargo_shuttle?.linked_console == src)
+		cargo_shuttle.linked_console = null
+	linked_shuttle_ref = null
 	return ..()
 
 /obj/machinery/computer/voidcrew_cargo/on_construction(mob/user)
@@ -39,10 +98,34 @@
  * All consoles on the same ship share the same shuttle
  */
 /obj/machinery/computer/voidcrew_cargo/proc/get_cargo_shuttle()
+	var/obj/structure/overmap/dynamic/player_outpost/site = get_outpost_from_atom(src)
+	if(site)
+		site.ensure_home_services()
+		return site.freight
 	var/obj/structure/overmap/ship/ship = get_ship_from_atom(src)
 	if(!ship)
 		return null
 	return ship.get_cargo_shuttle()
+
+/obj/machinery/computer/voidcrew_cargo/examine(mob/user)
+	. = ..()
+	if(anchored)
+		. += span_notice("It is <b>bolted</b> to the floor.")
+	else
+		. += span_notice("It is <i>unbolted</i> from the floor and can be dragged elsewhere.")
+
+// Computers are anchored with no tool that can undo it, so a crew that wanted its cargo
+// console on the other side of the bay had to screwdriver it into a frame and rebuild it
+// there. It unbolts and moves now; the screwdriver still takes it apart into its board.
+// The bank machine it orders through is a stored ref, so a moved console keeps its
+// account, and a rebuilt one re-finds the ship's bank in LateInitialize().
+/obj/machinery/computer/voidcrew_cargo/wrench_act(mob/living/user, obj/item/tool)
+	. = ..()
+	if(.)
+		return .
+	if(default_unfasten_wrench(user, tool, time = 4 SECONDS) == SUCCESSFUL_UNFASTEN)
+		return ITEM_INTERACT_SUCCESS
+	return ITEM_INTERACT_BLOCKING
 
 /obj/machinery/computer/voidcrew_cargo/multitool_act(mob/living/user, obj/item/multitool/tool)
 	if(QDELETED(tool.buffer) || !istype(tool.buffer, /obj/machinery/computer/bank_machine))
@@ -67,7 +150,10 @@
 	if(board)
 		board.contraband = TRUE
 		board.obj_flags |= EMAGGED
-	update_static_data(user)
+	// The catalog is static data now, so refresh every viewer - not just the emagger.
+	// Anyone else with the console open would otherwise keep the pre-emag pack list
+	// until they closed and reopened it.
+	update_static_data_for_all_viewers()
 	return TRUE
 
 /obj/machinery/computer/voidcrew_cargo/item_interaction(mob/living/user, obj/item/tool, list/modifiers)
@@ -89,6 +175,9 @@
 /obj/machinery/computer/voidcrew_cargo/Exited(atom/movable/gone, direction)
 	. = ..()
 	if(istype(gone, /obj/item/coupon))
+		var/obj/item/coupon/leaving = gone
+		if(leaving.inserted_console == src)
+			leaving.inserted_console = null
 		LAZYREMOVE(loaded_coupons, gone)
 
 /obj/machinery/computer/voidcrew_cargo/proc/on_bank_deletion(atom/source)
@@ -106,20 +195,55 @@
 /obj/machinery/computer/voidcrew_cargo/ui_static_data(mob/user)
 	var/list/data = list()
 	data["max_order"] = CARGO_MAX_ORDER
+
+	// The pack catalog is ~200 KiB of JSON. It has to live in static data, which is sent
+	// once on open: ui_data() is re-serialized and pushed to every viewer every SStgui
+	// tick (0.9s) and again after every ui_act, so building it there costs ~220 KiB/s per
+	// open console. That is invisible on a local host and saturates a real connection,
+	// backing up the same BYOND queue that carries player input - it reads as the whole
+	// client lagging, not just the console.
+	// Nothing in here changes mid-round: pack cost is only scaled by
+	// SSeconomy.pack_price_modifier, which roundstart station traits set and nothing else
+	// touches. The one exception is the emag contraband unlock, and emag_act() refreshes
+	// static data itself.
+	data["supplies"] = list()
+	for(var/pack_id in SSshuttle.supply_packs)
+		var/datum/supply_pack/pack = SSshuttle.supply_packs[pack_id]
+		if(!data["supplies"][pack.group])
+			data["supplies"][pack.group] = list(
+				"name" = pack.group,
+				"packs" = get_packs_data(pack.group),
+			)
+
 	return data
 
 /**
  * Returns a list of supply packs for a certain group
  */
+/obj/machinery/computer/voidcrew_cargo/proc/can_order_pack(datum/supply_pack/pack)
+	if(!pack)
+		return FALSE
+	if((pack.hidden && !(obj_flags & EMAGGED)) || (pack.special && !pack.special_enabled) || pack.drop_pod_only)
+		return FALSE
+	return !pack.contraband || contraband
+
+/// Both direct and name-based cart actions enforce the same per-pack UI limit.
+/obj/machinery/computer/voidcrew_cargo/proc/can_add_pack(datum/supply_pack/pack, amount)
+	if(!can_order_pack(pack) || !valid_cargo_order_quantity(amount, CARGO_MAX_ORDER))
+		return FALSE
+	var/already_ordered = 0
+	for(var/datum/supply_order/order as anything in checkout_list)
+		if(order.pack == pack)
+			already_ordered++
+	return already_ordered + amount <= CARGO_MAX_ORDER
+
 /obj/machinery/computer/voidcrew_cargo/proc/get_packs_data(group)
 	var/list/packs = list()
 	for(var/pack_id in SSshuttle.supply_packs)
 		var/datum/supply_pack/pack = SSshuttle.supply_packs[pack_id]
 		if(pack.group != group)
 			continue
-		if((pack.hidden && !(obj_flags & EMAGGED)) || (pack.special && !pack.special_enabled) || pack.drop_pod_only)
-			continue
-		if(pack.contraband && !contraband)
+		if(!can_order_pack(pack))
 			continue
 		var/obj/item/first_item = length(pack.contains) > 0 ? pack.contains[1] : null
 		packs += list(list(
@@ -130,7 +254,6 @@
 			"first_item_icon" = first_item?.icon,
 			"first_item_icon_state" = first_item?.icon_state,
 			"goody" = pack.goody,
-			"access" = pack.access,
 			"contraband" = pack.contraband,
 			"small_item" = FALSE,
 			"contains" = pack.get_contents_ui_data(),
@@ -140,22 +263,15 @@
 /obj/machinery/computer/voidcrew_cargo/ui_data(mob/user)
 	var/list/data = list()
 
-	// Build supplies list (in ui_data to ensure SSshuttle is initialized)
-	data["supplies"] = list()
-	for(var/pack_id in SSshuttle.supply_packs)
-		var/datum/supply_pack/pack = SSshuttle.supply_packs[pack_id]
-		if(!data["supplies"][pack.group])
-			data["supplies"][pack.group] = list(
-				"name" = pack.group,
-				"packs" = get_packs_data(pack.group),
-			)
-
-	data["has_bank_account"] = !!bank_account_holder
-	if(!bank_account_holder?.synced_bank_account)
+	// The pack catalog is deliberately NOT built here - see ui_static_data(). Everything
+	// below is small and genuinely per-tick; keep it that way.
+	data["has_bank_account"] = !!cargo_account()
+	data["account_name"] = cargo_account()?.account_holder
+	if(!cargo_account())
 		data["shuttle_error"] = "NO BANK ACCOUNT CONNECTED"
 		return data
 
-	data["points"] = bank_account_holder.synced_bank_account.account_balance
+	data["points"] = cargo_account().account_balance
 
 	// CargoCatalog compatibility - we don't use private buying for voidcrew
 	data["self_paid"] = FALSE
@@ -169,6 +285,7 @@
 
 	// Shuttle status
 	var/datum/voidcrew_cargo_shuttle/cargo_shuttle = get_cargo_shuttle()
+	cargo_shuttle?.check_stalled() // a delivery that never resolved reads as "Arriving" forever
 	var/shuttle_state = cargo_shuttle?.state || CARGO_SHUTTLE_AWAY
 	data["shuttle_state"] = shuttle_state
 	data["shuttle_timer"] = cargo_shuttle?.get_remaining_time() || 0
@@ -233,19 +350,15 @@
  * Check if the cargo shuttle can be called
  */
 /obj/machinery/computer/voidcrew_cargo/proc/can_call_cargo_shuttle()
-	var/obj/structure/overmap/ship/ship = get_ship_from_atom(src)
-	if(!ship)
-		return FALSE
-	if(!istype(ship.docked, /obj/structure/overmap/planet/empty))
-		return FALSE
-	if(ship.state != OVERMAP_SHIP_IDLE)
-		return FALSE
-	return TRUE
+	return !get_shuttle_error_message()
 
 /**
  * Get error message for shuttle restrictions
  */
 /obj/machinery/computer/voidcrew_cargo/proc/get_shuttle_error_message()
+	var/obj/structure/overmap/dynamic/player_outpost/site = get_outpost_from_atom(src)
+	if(site)
+		return site.freight?.availability_error()
 	var/obj/structure/overmap/ship/ship = get_ship_from_atom(src)
 	if(!ship)
 		return "Not on a registered ship"
@@ -254,7 +367,19 @@
 		return "Must be docked in space"
 	if(ship.state != OVERMAP_SHIP_IDLE)
 		return "Ship cannot be moving"
-	return null
+	// Everything past here gates CALLING the shuttle only. Once it has arrived it is
+	// itself holding the encounter's other reserve dock, and the berth check below would
+	// refuse to let the crew send it away again - ui_act("send") runs this proc before
+	// its own state switch, so a refusal here blocks the departure button too.
+	var/datum/voidcrew_cargo_shuttle/cargo_shuttle = get_cargo_shuttle()
+	if(cargo_shuttle && cargo_shuttle.state != CARGO_SHUTTLE_AWAY)
+		return null
+	// The shuttle berths on the encounter's other reserve dock, and a ship docked
+	// alongside us is sitting on it. Refuse now rather than after complete_arrival() has
+	// spent the warmup building a shuttle it has nowhere to put.
+	var/obj/structure/overmap/planet/empty/berth_at = ship.docked
+	var/list/berth = berth_at.get_cargo_berth(ship.shuttle)
+	return berth["error"]
 
 /**
  * Calculate total cost of all items in the checkout cart
@@ -269,10 +394,24 @@
 	. = ..()
 	if(.)
 		return
-	if(!bank_account_holder?.synced_bank_account)
+	var/obj/structure/overmap/dynamic/player_outpost/site = get_outpost_from_atom(src)
+	if(site && !site.can_spend(usr))
+		say("Treasury spending permission required.")
+		return TRUE
+	if(!cargo_account())
 		balloon_alert(usr, "no bank account connected.")
 		usr.playsound_local(src, 'sound/machines/buzz/buzz-sigh.ogg', 50, TRUE, -1)
 		return
+
+	// The cart is the manifest of an in-flight delivery: credits were checked when the
+	// shuttle was called, but buy() doesn't charge until it docks. Editing it mid-flight
+	// would shrink a dispatched shipment or tack on items that were never credit-checked.
+	if(action in list("add", "add_by_name", "remove", "modify", "clear"))
+		var/datum/voidcrew_cargo_shuttle/manifest_shuttle = get_cargo_shuttle()
+		if(manifest_shuttle && manifest_shuttle.state != CARGO_SHUTTLE_AWAY)
+			balloon_alert(usr, "order already dispatched")
+			usr.playsound_local(src, 'sound/machines/buzz/buzz-sigh.ogg', 50, TRUE, -1)
+			return TRUE
 
 	switch(action)
 		/**
@@ -296,26 +435,27 @@
 			return TRUE
 		if("modify")
 			var/order_name = params["order_name"]
+			var/amount = isnum(params["amount"]) ? params["amount"] : text2num(params["amount"])
+			var/supply_pack_id = name_to_id(order_name)
+			var/datum/supply_pack/pack = SSshuttle.supply_packs[supply_pack_id]
+			// Validate before removing existing entries, including their coupons.
+			if(!can_order_pack(pack) || isnull(amount) || (amount != 0 && !valid_cargo_order_quantity(amount, CARGO_MAX_ORDER)))
+				return FALSE
 			//clear out all orders with the above mentioned order_name name to make space for the new amount
 			for(var/datum/supply_order/order as anything in checkout_list) //find corresponding order id for the order name
 				if(order.pack.name == order_name)
 					remove_item(list("id" = "[order.id]"))
 
 			//now add the new amount stuff
-			var/amount = text2num(params["amount"])
 			if(!amount)
 				return TRUE
-			var/supply_pack_id = name_to_id(order_name) //map order name to supply pack id for adding
-			if(!supply_pack_id)
-				return FALSE
 			return add_item(list("id" = supply_pack_id, "amount" = amount))
 		if("clear")
-			//create copy of list else we will get runtimes when iterating & removing items on the same list checkout_list
-			for(var/datum/supply_order/cancelled_order as anything in checkout_list)
+			// Keep walking the original orders while removals change the shared cart.
+			for(var/datum/supply_order/cancelled_order as anything in checkout_list.Copy())
 				if(!cancelled_order.can_be_cancelled)
 					continue //don't cancel other department's orders or orders that can't be cancelled
-				if(remove_item(list("id" = "[cancelled_order.id]")))
-					return TRUE
+				remove_item(list("id" = "[cancelled_order.id]"))
 			return TRUE
 		if("toggleprivate")
 			// Not used for voidcrew cargo - all purchases use ship's bank account
@@ -362,27 +502,37 @@
 
 			// Set linked console for callbacks
 			cargo_shuttle.linked_console = src
+			linked_shuttle_ref = WEAKREF(cargo_shuttle)
 
 			switch(cargo_shuttle.state)
 				if(CARGO_SHUTTLE_AWAY)
 					// Call the shuttle with our orders (allow empty cart if loan accepted)
-					if(!length(checkout_list) && !cargo_shuttle.loan_accepted)
+					if(!site && !length(checkout_list) && !cargo_shuttle.loan_accepted)
 						say("Error: No orders in cart.")
 						return TRUE
 
 					// Check if we have enough credits for the order
 					var/total_cost = get_cart_total()
-					var/available = bank_account_holder.synced_bank_account.account_balance
+					// A siphon on the account freezes ordering: shipping the balance out
+					// as crates while a pirate drains it is just laundering. A loan-only
+					// call brings credits in, so that one still goes.
+					if(total_cost > 0 && cargo_account().is_siphon_locked())
+						say("Error: accounts locked - hostile intrusion detected. Orders cannot be placed.")
+						usr.playsound_local(src, 'sound/machines/buzz/buzz-sigh.ogg', 50, TRUE, -1)
+						return TRUE
+					var/available = cargo_account().account_balance
 					if(total_cost > available)
 						say("Error: Insufficient credits. Need [total_cost], have [available].")
 						return TRUE
 
 					// Call the shuttle - buy() will be called after successful docking
-					if(cargo_shuttle.call_shuttle(ship))
-						say("Cargo shuttle called. ETA 30 seconds.")
-						usr.investigate_log("called the [bank_account_holder.synced_bank_account.account_holder] cargo shuttle.", INVESTIGATE_CARGO)
+					var/call_error = cargo_shuttle.call_shuttle(ship)
+					if(call_error)
+						say("Error: [call_error].")
+						usr.playsound_local(src, 'sound/machines/buzz/buzz-sigh.ogg', 50, TRUE, -1)
 					else
-						say("Error: Could not call cargo shuttle.")
+						say("Cargo shuttle called. ETA 30 seconds.")
+						usr.investigate_log("called the [cargo_account().account_holder] cargo shuttle.", INVESTIGATE_CARGO)
 
 				if(CARGO_SHUTTLE_DOCKED)
 					// Check for living mobs before sending
@@ -392,7 +542,7 @@
 					// Send shuttle away
 					if(cargo_shuttle.send_shuttle())
 						say("Cargo shuttle departing. Exports will be processed shortly.")
-						usr.investigate_log("sent the [bank_account_holder.synced_bank_account.account_holder] cargo shuttle away.", INVESTIGATE_CARGO)
+						usr.investigate_log("sent the [cargo_account().account_holder] cargo shuttle away.", INVESTIGATE_CARGO)
 					else
 						say("Error: Could not send cargo shuttle.")
 
@@ -428,35 +578,37 @@
 	requisition_text += "Time of Order: [station_time_timestamp()]<br/>"
 	for(var/order_name in cart_list)
 		var/datum/supply_order/order = cart_list[order_name]["order"]
-		requisition_text += "[cart_list[order_name]["amount"]] [order.pack.name]("
-		requisition_text += "Access Restrictions: [SSid_access.get_access_desc(order.pack.access)])</br>"
+		requisition_text += "[cart_list[order_name]["amount"]] [order.pack.name]</br>"
 	requisition_paper.add_raw_text(requisition_text)
 	requisition_paper.update_appearance()
 
 /**
  * Adds an item to the grocery list
  */
-/obj/machinery/computer/voidcrew_cargo/proc/add_item(params)
+/obj/machinery/computer/voidcrew_cargo/proc/add_item(params, mob/user = usr)
 	var/id = params["id"]
 	id = text2path(id) || id
 	var/datum/supply_pack/pack = SSshuttle.supply_packs[id]
-	if(!istype(pack))
-		CRASH("Unknown supply pack id given by order console ui. ID: [params["id"]]")
+	// Catalog buttons omit amount; explicit invalid values must not become one.
+	var/amount = 1
+	if("amount" in params)
+		amount = isnum(params["amount"]) ? params["amount"] : text2num(params["amount"])
+	if(!can_add_pack(pack, amount) || !user)
+		return FALSE
 
 	var/name = "*None Provided*"
 	var/rank = "*None Provided*"
-	if(ishuman(usr))
-		var/mob/living/carbon/human/human = usr
+	if(ishuman(user))
+		var/mob/living/carbon/human/human = user
 		name = human.get_authentification_name()
 		rank = human.get_assignment(hand_first = TRUE)
-	else if(issilicon(usr))
-		name = usr.real_name
+	else if(issilicon(user))
+		name = user.real_name
 		rank = "Silicon"
 	else
-		name = usr.real_name
+		name = user.real_name
 		rank = "Unknown"
 
-	var/amount = text2num(params["amount"]) || 1
 	for(var/count in 1 to amount)
 		// Check for matching coupon
 		var/obj/item/coupon/applied_coupon
@@ -468,12 +620,17 @@
 				coupon_check.inserted_console = null
 				break
 
+		// No paying_account: that field means "bought privately out of one person's
+		// pocket", and supply_pack/generate() answers it with a privacy-locked crate
+		// that only the buyer's own ID opens. Every ship order is paid by the ship,
+		// so buy() charges the bank machine's account directly and the crate arrives
+		// open to the whole crew. It also keeps get_final_cost() off the 1.1x private
+		// surcharge, which the cart was showing but buy() never actually charged.
 		var/datum/supply_order/new_order = new(
 			pack = pack,
 			orderer = name,
 			orderer_rank = rank,
-			orderer_ckey = usr.ckey,
-			paying_account = bank_account_holder.synced_bank_account,
+			orderer_ckey = user.ckey,
 			coupon = applied_coupon,
 		)
 		checkout_list += new_order

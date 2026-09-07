@@ -56,12 +56,20 @@ GLOBAL_LIST_INIT(blacklisted_automated_baseturfs, typecacheof(list(
 		if(null)
 			return
 		if(/turf/baseturf_bottom)
-			path = SSmapping.level_trait(z, ZTRAIT_BASETURF) || /turf/open/space
+			// VOIDCREW EDIT: kept in lockstep with the copy in voidcrew/edits/turf.dm, which
+			// is the body that actually runs (it is the outermost link of the duplicate-
+			// definition chain and never calls ..()). The map FOOTPRINT under the turf is
+			// asked before the z-level: a level holds up to four planets of different biomes
+			// and ZTRAIT_BASETURF is one value per level, so it can only be right for one of
+			// them. Null falls through to the upstream lookup unchanged.
+			var/footprint_ground = footprint_baseturf_for_turf(src)
+			path = footprint_ground || SSmapping.level_trait(z, ZTRAIT_BASETURF) || /turf/open/space
 			if (!ispath(path))
 				path = text2path(path)
 				if (!ispath(path))
-					warning("Z-level [z] has invalid baseturf '[SSmapping.level_trait(z, ZTRAIT_BASETURF)]'")
+					warning("Z-level [z] has invalid baseturf '[footprint_ground || SSmapping.level_trait(z, ZTRAIT_BASETURF)]'")
 					path = /turf/open/space
+			// END VOIDCREW EDIT
 		if(/turf/open/space/basic)
 			// basic doesn't initialize and this will cause issues
 			// no warning though because this can happen naturaly as a result of it being built on top of
@@ -158,8 +166,42 @@ GLOBAL_LIST_INIT(blacklisted_automated_baseturfs, typecacheof(list(
 	if(SSlighting.initialized)
 		// Space tiles should never have lighting objects
 		if(!space_lit)
-			// Should have a lighting object if we never had one
-			lighting_object = old_lighting_object || new /datum/lighting_object(src)
+			// VOIDCREW EDIT: kept in lockstep with the copy in voidcrew/edits/turf.dm, which is
+			// the body that actually runs (it is the outermost link of the duplicate-definition
+			// chain and never calls ..()). Two rules composed here:
+			// 1. The AREA gate that SSlighting.create_all_lighting_objects() and
+			//    map_template.dm both apply. Without it every mid-round ChangeTurf into a
+			//    static_lighting = FALSE area (/area/overmap, /area/centcom/asteroid/voidcrew,
+			//    /area/space, holodecks) accretes a lighting object that roundstart init
+			//    deliberately skipped and nothing ever reclaims.
+			// 2. Ambient-lit ground (a planet surface: static_lighting FALSE +
+			//    ambient_lighting TRUE) is a special case of that gate with ONE exception -
+			//    a turf that lights ITSELF, like the fallout zone's hazard green or a lava
+			//    river, keeps an object or its own light has nothing to render on. That is
+			//    what preserves the nuclear biome's telegraph.
+			//    See /turf/proc/skips_lighting_object() in voidcrew/edits/lighting.dm.
+			// Ordered so the ambient test costs one var read on every non-planet turf in the
+			// game and the proc call only ever runs on planet ground.
+			// Plus: a nested ChangeTurf inside new path(src) - e.g. /turf/closed/mineral/random
+			// rerolling its ore type during Initialize - can already have built a lighting
+			// object for this spot. Blindly building another one here double-assigns and
+			// stack-traces ("a lighting object was assigned to a turf that already had a
+			// lighting object!") on every mid-round terrain generation pass. Reuse whichever
+			// object survives.
+			var/area/lit_area = new_turf.loc
+			var/wants_lighting_object = (!lit_area || lit_area.static_lighting)
+			if(!wants_lighting_object && lit_area.ambient_lighting && !skips_lighting_object())
+				wants_lighting_object = TRUE
+			if(wants_lighting_object)
+				if(old_lighting_object && lighting_object && lighting_object != old_lighting_object)
+					qdel(lighting_object, force = TRUE) // drop the nested duplicate, keep the original
+				lighting_object = old_lighting_object || lighting_object || new /datum/lighting_object(src)
+			else
+				if(lighting_object && lighting_object != old_lighting_object)
+					qdel(lighting_object, force = TRUE)
+				if(old_lighting_object)
+					qdel(old_lighting_object, force = TRUE)
+			// END VOIDCREW EDIT (was: lighting_object = old_lighting_object || new /datum/lighting_object(src))
 		else if (old_lighting_object)
 			qdel(old_lighting_object, force = TRUE)
 
@@ -191,6 +233,17 @@ GLOBAL_LIST_INIT(blacklisted_automated_baseturfs, typecacheof(list(
 	else if(ispath(old_type, /turf/open/space))
 		for(var/turf/open/space/space_tile in RANGE_TURFS(1, src))
 			space_tile.enable_starlight()
+
+	// VOIDCREW EDIT: ambient bleed, the same three cases the starlight branches above
+	// handle, generalised from "space turf" to "turf in an area that lights it wholesale".
+	// Our own capability can have flipped (we became or stopped being a cordon or a space
+	// tile), and we can have started or stopped being something for the base-lit ground
+	// around us to bleed onto. NOTE: this copy of ChangeTurf is dead - voidcrew/edits/turf.dm
+	// declares a full duplicate that never calls parent and wins on include order - but the
+	// two bodies are kept in lockstep. See voidcrew/edits/lighting.dm.
+	if(SSlighting.initialized)
+		update_ambient_bleed_after_change(old_type, old_lighting_object)
+	// END VOIDCREW EDIT
 
 	if(old_opacity != opacity && SSticker)
 		GLOB.cameranet.bareMajorChunkChange(src)
@@ -250,10 +303,26 @@ GLOBAL_LIST_INIT(blacklisted_automated_baseturfs, typecacheof(list(
 		CALCULATE_ADJACENT_TURFS(src, (ispath(oldType, /turf/closed) && isopenturf(src) ? MAKE_ACTIVE : NORMAL_TURF))
 
 /turf/open/AfterChange(flags, oldType)
-	..()
+	// A closed turf holds no gas at all, so the mix we just rolled off our initial_gas_mix is
+	// invented out of nothing, and CHANGETURF_INHERIT_AIR has nothing to inherit from either.
+	// Assimilate_Air() is what's meant to reconcile a fresh turf with its surroundings, but
+	// this early our adjacency list is still empty, so it early-returns and the invented mix
+	// survives - which is how dismantling a wall dumps a full tile of breathable air into
+	// whatever the wall was sealing. Build the adjacency now and throw the invented gas away,
+	// so we take a share of what our neighbours actually have instead.
+	var/sheered_from_closed = ispath(oldType, /turf/closed) && !blocks_air && !planetary_atmos && !(flags & CHANGETURF_IGNORE_AIR)
+	if(sheered_from_closed)
+		flags |= CHANGETURF_RECALC_ADJACENT
+	..(flags, oldType)
 	RemoveLattice()
-	if(!(flags & (CHANGETURF_IGNORE_AIR | CHANGETURF_INHERIT_AIR)))
-		Assimilate_Air()
+	if(sheered_from_closed)
+		// Temperature is deliberately left alone. An emptied turf mix still carries
+		// HEAT_CAPACITY_VACUUM into Assimilate_Air's average, and TCMB there would
+		// flash-freeze the room we just opened into.
+		air.remove_ratio(1)
+	else if(flags & (CHANGETURF_IGNORE_AIR | CHANGETURF_INHERIT_AIR))
+		return
+	Assimilate_Air()
 
 //////Assimilate Air//////
 /turf/open/proc/Assimilate_Air()

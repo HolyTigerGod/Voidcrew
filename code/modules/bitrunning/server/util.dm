@@ -83,6 +83,11 @@
 	for(var/obj/machinery/byteforge/forge in oview(MAX_DISTANCE, src))
 		nearby_forges += forge
 
+	// A ship can map or build a server without a forge in range. Callers already
+	// handle a null forge; pick() on an empty list would runtime before they got it.
+	if(!length(nearby_forges))
+		return null
+
 	return pick(nearby_forges)
 
 
@@ -96,10 +101,12 @@
 	for(var/datum/lazy_template/virtual_domain/available as anything in subtypesof(/datum/lazy_template/virtual_domain))
 		var/init_cost = initial(available.cost)
 
+		// VOIDCREW EDIT: upper bound was COST_EXTREME, the repriced boss arenas (5/8)
+		// must never come out of the Randomize button; a boss dive is a deliberate purchase.
 		if(!initial(available.test_only) && \
 			init_cost <= points && \
 			init_cost > BITRUNNER_COST_NONE && \
-			init_cost < BITRUNNER_COST_EXTREME \
+			init_cost < BITRUNNER_COST_BOSS \
 		)
 			random_domains.Add(available)
 

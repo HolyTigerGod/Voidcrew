@@ -4,14 +4,34 @@
 #define TECHWEB_NODE_SHIP_PIPING "ship_piping"
 #define TECHWEB_NODE_SHIP_TILING "ship_tiling"
 #define TECHWEB_NODE_SHIP_LIGHTING "ship_lighting"
+#define TECHWEB_NODE_SHIP_FABRICATION "ship_fabrication"
+#define TECHWEB_NODE_SHIP_FABRICATION_ADV "ship_fabrication_advanced"
 #define TECHWEB_NODE_SURVEY_SCANNER "survey_scanner"
 #define TECHWEB_NODE_SURVEY_CONSOLE "survey_console"
 #define TECHWEB_NODE_SURVEY_CONSOLE_ADV "survey_console_advanced"
 #define TECHWEB_NODE_SURVEY_CONSOLE_SUPERIOR "survey_console_superior"
 #define TECHWEB_NODE_SURVEY_CONSOLE_ELITE "survey_console_elite"
+#define TECHWEB_NODE_RADAR_ARRAY "radar_array"
+#define TECHWEB_NODE_RADAR_ARRAY_ADV "radar_array_advanced"
+#define TECHWEB_NODE_RADAR_ARRAY_ELITE "radar_array_elite"
+#define TECHWEB_NODE_RTG "rtg_generation"
+#define TECHWEB_NODE_TEG "teg_generation"
 #define TECHWEB_NODE_NANITE_BASIC "nanite_base"
 #define TECHWEB_NODE_NANITE_SMART "nanite_smart"
 #define TECHWEB_NODE_NANITE_MESH "nanite_mesh"
+
+// Weapon blueprint pipeline (per-gun part/ammo nodes)
+#define TECHWEB_NODE_WEAPON_PART_L6_SAW "weapon_part_l6_saw"
+#define TECHWEB_NODE_WEAPON_AMMO_L6_SAW "weapon_ammo_l6_saw"
+#define TECHWEB_NODE_WEAPON_PART_C20R "weapon_part_c20r"
+#define TECHWEB_NODE_WEAPON_AMMO_C20R "weapon_ammo_c20r"
+#define TECHWEB_NODE_WEAPON_PART_SNIPER "weapon_part_sniper"
+#define TECHWEB_NODE_WEAPON_AMMO_SNIPER "weapon_ammo_sniper"
+#define TECHWEB_NODE_WEAPON_PART_BULLDOG "weapon_part_bulldog"
+#define TECHWEB_NODE_WEAPON_AMMO_BULLDOG "weapon_ammo_bulldog"
+#define TECHWEB_NODE_WEAPON_PART_WT550 "weapon_part_wt550"
+#define TECHWEB_NODE_WEAPON_AMMO_WT550 "weapon_ammo_wt550"
+#define TECHWEB_NODE_WEAPON_PART_CARBINE "weapon_part_carbine"
 
 // Ship Combat
 #define TECHWEB_NODE_SHIP_COMBAT "ship_combat"
@@ -23,6 +43,29 @@
 #define TECHWEB_NODE_SHIP_COMBAT_LASERS "ship_combat_lasers"
 #define TECHWEB_NODE_SHIP_COMBAT_INTERDICTOR "ship_combat_interdictor"
 #define TECHWEB_NODE_SHIP_COMBAT_SIPHON "ship_combat_siphon"
+#define TECHWEB_NODE_SHIP_COMBAT_ASSAULT_PODS "ship_combat_assault_pods"
+#define TECHWEB_NODE_SHIP_COMBAT_EW "ship_combat_ew"
 
 // Missions
 #define TECHWEB_NODE_MISSION_LOGISTICS "mission_logistics"
+
+// Transporter
+#define TECHWEB_NODE_TRANSPORTER "transporter"
+#define TECHWEB_NODE_TRANSPORTER_TARGETING "transporter_targeting"
+#define TECHWEB_NODE_TRANSPORTER_BIOFILTER "transporter_biofilter"
+
+// Generic ammunition (the per-gun blueprint ammo nodes live in _DEFINES above)
+#define TECHWEB_NODE_BALLISTIC_AMMO "ballistic_ammo"
+#define TECHWEB_NODE_AUTOMATIC_AMMO "automatic_ammo"
+#define TECHWEB_NODE_SPECIALIST_AMMO "specialist_ammo"
+#define TECHWEB_NODE_EXPERIMENTAL_AMMO "experimental_ammo"
+#define TECHWEB_NODE_EXPLOSIVE_AMMO "explosive_ammo"
+#define TECHWEB_NODE_BULLDOG_SPECIAL_AMMO "bulldog_special_ammo"
+#define TECHWEB_NODE_L6_SPECIAL_AMMO "l6_special_ammo"
+#define TECHWEB_NODE_SNIPER_SPECIAL_AMMO "sniper_special_ammo"
+
+#define TECHWEB_NODE_SHIP_AUTOMATION "ship_automation"
+#define TECHWEB_NODE_SHIP_AREA_CONSTRUCTION "ship_area_construction"
+#define TECHWEB_NODE_SHIP_REPAIR_SWARM "ship_repair_swarm"
+#define TECHWEB_NODE_SHIP_FABRICATION_MK3 "ship_fabrication_mk3"
+#define TECHWEB_NODE_SHIP_FABRICATION_MK4 "ship_fabrication_mk4"

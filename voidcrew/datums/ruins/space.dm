@@ -1,77 +1,37 @@
-/datum/map_template/ruin/space/macspace
-	id = "fast_food"
+// Voidcrew space ruin templates.
+//
+// COPY + REDIRECT SCHEME (2026-07-18): every upstream /tg/ space ruin
+// (_maps/RandomRuins/SpaceRuins/) was copied to
+// _maps/voidcrew/RandomRuins/SpaceRuins/ under the same filename, and each
+// copy was edited to add voidcrew's zone-aware loot caches
+// (/obj/structure/closet/crate/zone_loot) and zone-scaled mob spawners
+// (/obj/effect/zone_mobs). The prefix override below re-points the upstream
+// /datum/map_template/ruin/space datums (code/datums/ruins/space.dm) at those
+// copies, mappath is computed as prefix + suffix in
+// /datum/map_template/ruin/New(), and voidcrew files compile after code/, so
+// this single declaration redirects all of them without touching upstream
+// files. The upstream originals remain as merge reference only.
+//
+// The voidcrew-owned space ruin subtypes (/rare in rare_space.dm, /vestige in
+// antag_space.dm) set their own prefix to the same folder and are unaffected.
+//
+// When upstream adds a new space ruin: copy its .dmm into
+// _maps/voidcrew/RandomRuins/SpaceRuins/, add a themed zone_loot cache in its
+// most secure room and zone_mobs markers at its chokepoints, and it will load
+// from the copy automatically. Never add templates whose maps only exist in
+// the upstream folder, dead entries poison the space-ruin picker.
+/datum/map_template/ruin/space
 	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "Fast_Food.dmm"
-	name = "Mac Space Restaurant"
-	description = "A fast food reataurant in space."
 
-/datum/map_template/ruin/space/scav_mining
-	id = "mining_asteroid"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "scav_mining.dmm"
-	name = "Mining asteroid"
-	description = "An abandoned mining operation on an asteroid that now has new ocupants that is not happy to se you"
-
-/datum/map_template/ruin/space/power_puzzle
-	id = "power_puzzle"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "power_puzzle.dmm"
-	name = "Power Puzzle"
-	description = "an abandoned secure storage location. there is no power left in the batteries and the former ocupants locked it pretty tight before leaving.\
-	You will have to power areas to raise the bolts on the doors. look out for secrets."
-
-/datum/map_template/ruin/space/spacegym
-	id = "Space_Gym"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "spacegym.dmm"
-	name = "Space Gym"
-	description = "A gym, lost in space, where many grunts and moaning could be heard."
-
-/datum/map_template/ruin/space/oldshuttle
-	id = "oldcode-nukeops"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "oldcodeops.dmm"
-	name = "Strange Infiltrator"
-	description = "A nuclear operative's ship, drifing along the stars. This thing looks like it belongs in ancient times."
-
-/datum/map_template/ruin/space/transport18
-	id = "transport18"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "transport18.dmm"
-	name = "Booze Cruise"
-	description = "A freighter, damaged beyond repair and surrounded by a cloud of aluminium and... beer foam?"
-
-/datum/map_template/ruin/space/fueldepot
-	id = "fueldepot"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "fueldepot.dmm"
-	name = "Fuel Depot"
-	description = "An orbital refueling station with the remains of a ship lodged among the debris."
-
-/datum/map_template/ruin/space/nuclear_dump
-	id = "radioactivedump"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "nuclear_dump.dmm"
-	name = "Nuclear Waste Dump"
-	description = "An abandoned nuclear waste disposal zone, a relic of old-age spaceflight and a death sentence to any who dare enter..."
-
-/datum/map_template/ruin/space/ntfacility
-	id = "ntfacility"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "ntfacility.dmm"
-	name = "Abandoned Facility"
-	description = "A NT research station. Something has gone horribly wrong here."
-
-/datum/map_template/ruin/space/astraeus
-	id = "astraeus"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "astraeus.dmm"
-	name = "Astraeus Ruin"
-	description = "This vessel served a lengthy period in the Nanotrasen fleet, before an accident in the munitions bay caused to to be destroyed while in active combat."
-
-/datum/map_template/ruin/space/glade
-	id = "dark_glade"
-	prefix = "_maps/voidcrew/RandomRuins/SpaceRuins/"
-	suffix = "dark_glade.dmm"
-	name = "Dark Glade"
-	description = "It's always dark in the ancient glade."
+// Charlie Station is 112x64. load_level() reserves the ruin plus a maximum-size
+// docking berth on two opposite sides (112 + 56*2 + 3*2 = 230 wide) but the
+// largest block any reservation z-level can hand out is 222x222 (the band inset
+// by SHUTTLE_TRANSIT_BORDER, less the cordon ring). So it can never be boarded:
+// it surfaced as a normal signal that answered every dock attempt with "Failed to
+// load the location.", leaking a fresh 255x255 reservation z-level per attempt.
+//
+// Keep it out of the pickers until the map is trimmed under 104 wide (or the dock
+// berths are laid out along its short axis, which would fit at 198x182 but changes
+// docking rotation, see the dock rotation invariant before trying that).
+/datum/map_template/ruin/space/oldstation
+	unpickable = TRUE

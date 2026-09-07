@@ -4,14 +4,6 @@
  * Cryogenic Oversight Console
  *
  * Main console for managing ship job slots and crew awakening.
- *
- * CUSTOM SLOT SWAPPING FEATURE:
- * - Players can swap job slots to use their custom slots from GLOB.custom_slot_manager
- * - Each job gets a dropdown to select from player's owned custom slots
- * - When swapped, the custom slot's access_preset determines spawning player's access
- * - Swaps are stored in custom_slot_swaps: job_ref -> swap_info
- * - Only the player who swapped can revert the slot back to default
- * - Supports per-round equipment purchases for custom slots
  */
 
 //Main cryopod console.
@@ -25,11 +17,18 @@
 	icon_screen = null
 	density = FALSE
 	resistance_flags = INDESTRUCTIBLE|LAVA_PROOF|FIRE_PROOF|UNACIDABLE|ACID_PROOF
+	// The console had no board at all, so a screwdriver had nothing to take apart and
+	// nothing could ever put one back. It builds and deconstructs like any other
+	// computer now; the ship's last one is held back by screwdriver_act() below.
+	circuit = /obj/item/circuitboard/computer/cryopod
 
 	/// The ship object representing the ship that this console is on.
 	var/obj/docking_port/mobile/voidcrew/linked_port
-	/// Tracks custom slot swaps: job_ref -> list("ckey" = ckey, "slot_index" = index)
-	var/list/custom_slot_swaps = list()
+
+/obj/machinery/computer/cryopod/atom_break(damage_flag)
+	SHOULD_CALL_PARENT(FALSE)
+	// EMPs bypass INDESTRUCTIBLE by calling atom_break() directly. Keep crew management available.
+	return FALSE
 
 /obj/machinery/computer/cryopod/ui_interact(mob/user, datum/tgui/ui)
 	. = ..()
@@ -38,23 +37,117 @@
 		ui = new(user, src, "CryoStorageConsole", name)
 		ui.open()
 
+/obj/machinery/computer/cryopod/examine(mob/user)
+	. = ..()
+	if(anchored)
+		. += span_notice("It is <b>bolted</b> to the floor.")
+	else
+		. += span_notice("It is <i>unbolted</i> from the floor and can be dragged elsewhere.")
+	if(count_ship_consoles() == 1)
+		. += span_warning("It is the ship's only cryogenic oversight console, so it cannot be taken apart.")
+	else
+		. += span_notice("It can be taken apart with a <b>screwdriver</b>.")
+
 /obj/machinery/computer/cryopod/connect_to_shuttle(mapload, obj/docking_port/mobile/voidcrew/port, obj/docking_port/stationary/dock)
 	. = ..()
+	link_to_port(port)
+
+/// Adopts a mobile port as this console's ship, keeping the port's back-reference in step.
+/obj/machinery/computer/cryopod/proc/link_to_port(obj/docking_port/mobile/voidcrew/port)
+	if(!istype(port))
+		return FALSE
 	linked_port = port
 	port.cryo_console = src
+	return TRUE
+
+/**
+ * Resolves the ship this console manages.
+ *
+ * connect_to_shuttle() is the only thing that sets linked_port, and it only fires for
+ * consoles that were on the hull's map when it loaded. A console built in-round - now
+ * possible, the board exists - has to re-derive its port from where it is standing.
+ * Unwrenching and re-wrenching an existing console keeps the ref it already has.
+ */
+/obj/machinery/computer/cryopod/proc/get_linked_ship()
+	if(linked_port?.current_ship)
+		return linked_port.current_ship
+	var/obj/docking_port/mobile/voidcrew/port = SSshuttle.get_containing_shuttle(src)
+	if(!istype(port) || !port.current_ship)
+		return null
+	link_to_port(port)
+	return port.current_ship
+
+/**
+ * Counts every cryogenic oversight console aboard the same ship as this one.
+ * Returns 0 when this console is not aboard a ship at all, which is the only case
+ * where there is no ship join point to protect.
+ */
+/obj/machinery/computer/cryopod/proc/count_ship_consoles()
+	var/obj/docking_port/mobile/port = linked_port || SSshuttle.get_containing_shuttle(src)
+	if(!port)
+		return 0
+	var/count = 0
+	for(var/area/shuttle_area as anything in port.shuttle_areas)
+		for(var/obj/machinery/computer/cryopod/console in shuttle_area)
+			count++
+	return count
+
+/obj/machinery/computer/cryopod/wrench_act(mob/living/user, obj/item/tool)
+	. = ..()
+	if(.)
+		return .
+	if(default_unfasten_wrench(user, tool, time = 4 SECONDS) == SUCCESSFUL_UNFASTEN)
+		return ITEM_INTERACT_SUCCESS
+	return ITEM_INTERACT_BLOCKING
+
+/obj/machinery/computer/cryopod/screwdriver_act(mob/living/user, obj/item/tool)
+	// The console is where a ship opens and closes joining and sets its job slots, and
+	// it is the only place that can. A crew that took the last one apart would have no
+	// way back in, so the last one moves but does not come apart.
+	if(count_ship_consoles() == 1)
+		balloon_alert(user, "ship's only console!")
+		to_chat(user, span_warning("This is the ship's only cryogenic oversight console."))
+		return ITEM_INTERACT_BLOCKING
+	return ..()
+
+/obj/machinery/computer/cryopod/Destroy()
+	// The mobile port outlives its console and its cryo_console back-ref is otherwise
+	// only dropped when the port itself dies
+	if(linked_port?.cryo_console == src)
+		linked_port.cryo_console = null
+	linked_port = null
+	return ..()
 
 /obj/machinery/computer/cryopod/ui_data(mob/user)
 	var/list/data = ..()
 
-	data["awakening"] = linked_port.current_ship.joining_allowed
-	data["cooldown"] = (COOLDOWN_TIMELEFT(linked_port.current_ship, job_slot_adjustment_cooldown) / 10)
-	data["memo"] = linked_port.current_ship.memo
+	// A console standing somewhere that is not a ship (built on a derelict, say) has no
+	// ship to report on. Send the keys anyway so the interface renders its off state
+	// rather than reading undefined.
+	var/obj/structure/overmap/ship/ship = get_linked_ship()
+	if(!ship)
+		data["awakening"] = FALSE
+		data["cooldown"] = 0
+		data["memo"] = ""
+		data["election_running"] = FALSE
+		data["election_cooldown"] = 0
+		data["has_captain"] = FALSE
+		data["is_crew"] = FALSE
+		data["can_call_election"] = FALSE
+		return data
 
-	// Add player's current credits (camelCase for TGUI)
-	if(user.client?.ckey)
-		data["playerCredits"] = GLOB.ship_economy_db.get_credits(user.client.ckey)
-	else
-		data["playerCredits"] = 0
+	data["awakening"] = ship.joining_allowed
+	data["cooldown"] = (COOLDOWN_TIMELEFT(ship, job_slot_adjustment_cooldown) / 10)
+	data["memo"] = ship.memo
+
+	// Command elections. The console is where a crew without a captain comes to fix
+	// that: it is already linked to the ship, already open to every crewmember, and
+	// mapped onto every playable hull. See voidcrew/modules/captain_management.
+	data["election_running"] = ship.election_in_progress
+	data["election_cooldown"] = round(COOLDOWN_TIMELEFT(ship, election_cooldown) / 10)
+	data["has_captain"] = ship.has_available_captain()
+	data["is_crew"] = !!(user?.mind && (user.mind in ship.ship_team?.members))
+	data["can_call_election"] = ship.can_call_election(user)
 
 	return data
 
@@ -62,47 +155,23 @@
 	var/list/data = ..()
 	data["jobs"] = list()
 
-	// Get player's custom slots if they have a client (camelCase for TGUI)
-	data["customSlots"] = list()
-	if(user.client?.ckey)
-		var/list/custom_slots = GLOB.custom_slot_manager.get_player_slots(user.client.ckey)
-		for(var/list/slot_data in custom_slots)
-			data["customSlots"] += list(list(
-				"index" = slot_data["slot_index"],
-				"name" = slot_data["slot_name"],
-				"accessPreset" = slot_data["access_preset"],
-				"unlocked" = slot_data["purchased"],
-				"equipmentCost" = 0
-			))
+	var/obj/structure/overmap/ship/ship = get_linked_ship()
+	if(!ship)
+		return data
 
-	// Build swap options list for jobs (references to customSlots by index)
-	var/list/swap_options = list()
-	for(var/list/slot in data["customSlots"])
-		if(slot["unlocked"])
-			swap_options += list(list(
-				"index" = slot["index"],
-				"name" = slot["name"]
-			))
-
-	for(var/datum/job/ship_jobs as anything in linked_port.current_ship.job_slots)
+	for(var/datum/job/ship_jobs as anything in ship.job_slots)
 		if(ship_jobs.officer)
 			continue
-		var/job_ref = REF(ship_jobs)
-		var/current_swap = -1
-		if(job_ref in custom_slot_swaps)
-			current_swap = custom_slot_swaps[job_ref]["slot_index"]
 
 		// Calculate max slots: initial slots * 2, but cap at 6 (matching backend limit)
-		var/initial_slots = linked_port.current_ship.initial_job_slots?[ship_jobs] || 1
+		var/initial_slots = ship.initial_job_slots?[ship_jobs] || 1
 		var/max_slots = min(initial_slots * 2, 6)
 
 		data["jobs"] += list(list(
 			"name" = ship_jobs.title,
-			"slots" = linked_port.current_ship.job_slots[ship_jobs],
-			"ref" = job_ref,
-			"max" = max_slots,
-			"swapOptions" = swap_options.Copy(),
-			"currentSwap" = current_swap
+			"slots" = ship.job_slots[ship_jobs],
+			"ref" = REF(ship_jobs),
+			"max" = max_slots
 		))
 
 	return data
@@ -112,177 +181,41 @@
 	if(.)
 		return TRUE
 
+	var/obj/structure/overmap/ship/ship = get_linked_ship()
+	if(!ship)
+		return
+
 	switch(action)
 		if("toggleAwakening")
-			linked_port.current_ship.joining_allowed = !linked_port.current_ship.joining_allowed
+			ship.joining_allowed = !ship.joining_allowed
+
+		if("callElection")
+			// call_election re-checks everything and says why it refused
+			ship.call_election(usr)
 
 		if("setMemo")
-			if(!("newName" in params) || params["newName"] == linked_port.current_ship.memo)
+			if(!("newName" in params) || params["newName"] == ship.memo)
 				return
-			linked_port.current_ship.memo = params["newName"]
+			ship.memo = params["newName"]
 
 		if("adjustJobSlot")
-			if(!("toAdjust" in params) || !("delta" in params) || !COOLDOWN_FINISHED(linked_port.current_ship, job_slot_adjustment_cooldown))
+			if(!("toAdjust" in params) || !("delta" in params) || !COOLDOWN_FINISHED(ship, job_slot_adjustment_cooldown))
 				return
 			var/datum/job/target_job = locate(params["toAdjust"])
 			if(!target_job)
 				return
-			if(linked_port.current_ship.job_slots[target_job] + params["delta"] < 0 || linked_port.current_ship.job_slots[target_job] + params["delta"] > 6)
+			if(ship.job_slots[target_job] + params["delta"] < 0 || ship.job_slots[target_job] + params["delta"] > 6)
 				return
-			linked_port.current_ship.job_slots[target_job] += params["delta"]
-			COOLDOWN_START(linked_port.current_ship, job_slot_adjustment_cooldown, DEFAULT_JOB_SLOT_ADJUSTMENT_COOLDOWN)
+			ship.job_slots[target_job] += params["delta"]
+			COOLDOWN_START(ship, job_slot_adjustment_cooldown, DEFAULT_JOB_SLOT_ADJUSTMENT_COOLDOWN)
 			update_static_data(usr)
 
-		if("swapCustomSlot")
-			if(!usr.client?.ckey)
-				return FALSE
-			if(!("jobRef" in params) || !("slotIndex" in params))
-				return FALSE
-
-			var/job_ref = params["jobRef"]
-			var/slot_index = text2num(params["slotIndex"])
-
-			// Verify the job exists
-			var/datum/job/target_job = locate(job_ref)
-			if(!target_job)
-				to_chat(usr, span_warning("Invalid job reference."))
-				return FALSE
-
-			// If slot_index is -1, revert to default
-			if(slot_index == -1)
-				if(job_ref in custom_slot_swaps)
-					custom_slot_swaps -= job_ref
-					to_chat(usr, span_notice("Job slot '[target_job.title]' reverted to default."))
-					update_static_data(usr)
-				return TRUE
-
-			// Verify the player owns this custom slot
-			if(!GLOB.custom_slot_manager.is_slot_owned(usr.client.ckey, slot_index))
-				to_chat(usr, span_warning("You don't own this custom slot!"))
-				return FALSE
-
-			// Get the slot details
-			var/list/player_slots = GLOB.custom_slot_manager.get_player_slots(usr.client.ckey)
-			var/list/selected_slot = null
-			for(var/list/slot in player_slots)
-				if(slot["slot_index"] == slot_index)
-					selected_slot = slot
-					break
-
-			if(!selected_slot)
-				to_chat(usr, span_warning("Failed to load custom slot data."))
-				return FALSE
-
-			// Store the swap configuration
-			custom_slot_swaps[job_ref] = list(
-				"ckey" = usr.client.ckey,
-				"slot_index" = slot_index,
-				"slot_name" = selected_slot["slot_name"],
-				"access_preset" = selected_slot["access_preset"]
-			)
-
-			to_chat(usr, span_notice("Job slot '[target_job.title]' will now use your custom slot '[selected_slot["slot_name"]]'."))
-			log_game("CRYO_CONSOLE: [usr.client.ckey] swapped job [target_job.title] ([job_ref]) to custom slot [slot_index] on [linked_port.current_ship.name]")
-			update_static_data(usr)
-			return TRUE
-
-		if("revertToDefault")
-			if(!usr.client?.ckey)
-				return FALSE
-			if(!("job_ref" in params))
-				return FALSE
-
-			var/job_ref = params["job_ref"]
-
-			// Verify the job exists
-			var/datum/job/target_job = locate(job_ref)
-			if(!target_job)
-				to_chat(usr, span_warning("Invalid job reference."))
-				return FALSE
-
-			// Check if this job is currently swapped
-			if(!(job_ref in custom_slot_swaps))
-				to_chat(usr, span_warning("This job is already using the default configuration."))
-				return FALSE
-
-			// Only allow the player who made the swap to revert it
-			var/list/swap_info = custom_slot_swaps[job_ref]
-			if(swap_info["ckey"] != usr.client.ckey)
-				to_chat(usr, span_warning("Only the player who swapped this slot can revert it."))
-				return FALSE
-
-			// Remove the swap
-			custom_slot_swaps -= job_ref
-
-			to_chat(usr, span_notice("Job slot '[target_job.title]' has been reverted to default."))
-			log_game("CRYO_CONSOLE: [usr.client.ckey] reverted job [target_job.title] ([job_ref]) to default on [linked_port.current_ship.name]")
-			return TRUE
-
-		if("purchaseEquipment")
-			if(!usr.client?.ckey)
-				return FALSE
-			if(!("slot_index" in params) || !("item_path" in params) || !("cost" in params))
-				return FALSE
-
-			var/slot_index = text2num(params["slot_index"])
-			var/item_path = params["item_path"]
-			var/cost = text2num(params["cost"])
-
-			// Attempt the purchase through the custom slot manager
-			if(GLOB.custom_slot_manager.purchase_equipment(usr.client.ckey, slot_index, item_path, cost))
-				to_chat(usr, span_notice("Successfully purchased equipment for custom slot [slot_index]!"))
-				return TRUE
-			else
-				to_chat(usr, span_warning("Failed to purchase equipment. Check if you have enough credits and own the slot."))
-				return FALSE
-
 /**
- * Get custom slot configuration for a job if it's been swapped
- *
- * @param job - The job datum or job reference
- * @return List with swap info (ckey, slot_index, slot_name, access_preset) or null if not swapped
+ * Circuit board
  */
-/obj/machinery/computer/cryopod/proc/get_custom_slot_for_job(datum/job/job)
-	if(!job)
-		return null
-
-	var/job_ref = REF(job)
-	if(!(job_ref in custom_slot_swaps))
-		return null
-
-	return custom_slot_swaps[job_ref]
-
-/**
- * Check if a job slot is currently swapped to a custom slot
- *
- * @param job - The job datum or job reference
- * @return TRUE if swapped, FALSE otherwise
- */
-/obj/machinery/computer/cryopod/proc/is_job_swapped(datum/job/job)
-	if(!job)
-		return FALSE
-
-	var/job_ref = REF(job)
-	return (job_ref in custom_slot_swaps)
-
-/**
- * Get the access preset for a job (returns custom slot preset if swapped, null otherwise)
- *
- * @param job - The job datum
- * @return Access preset string (engineer/medical/security/captain/assistant) or null
- */
-/obj/machinery/computer/cryopod/proc/get_job_access_preset(datum/job/job)
-	var/list/swap_info = get_custom_slot_for_job(job)
-	if(!swap_info)
-		return null
-
-	return swap_info["access_preset"]
-
-/**
- * Clear all custom slot swaps (useful for round restart or admin commands)
- */
-/obj/machinery/computer/cryopod/proc/clear_all_swaps()
-	custom_slot_swaps.Cut()
-	log_game("CRYO_CONSOLE: All custom slot swaps cleared on [linked_port?.current_ship?.name]")
+/obj/item/circuitboard/computer/cryopod
+	name = "Cryogenic Oversight Console"
+	greyscale_colors = CIRCUIT_COLOR_COMMAND
+	build_path = /obj/machinery/computer/cryopod
 
 #undef DEFAULT_JOB_SLOT_ADJUSTMENT_COOLDOWN

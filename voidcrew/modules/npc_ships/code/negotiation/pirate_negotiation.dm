@@ -10,7 +10,7 @@
 	/// The player ship being extorted
 	var/obj/structure/overmap/ship/player_ship
 	/// The holopad displaying the negotiation
-	var/obj/machinery/holopad/ship_comms/holopad
+	var/obj/machinery/holopad/holopad
 	/// The hologram of the pirate captain
 	var/obj/effect/overlay/holo_pad_hologram/pirate/hologram
 	/// Mission pads linked for tribute delivery (all pads on player ship)
@@ -37,6 +37,15 @@
 	/// Item demand - display name for the item
 	var/demanded_item_name = ""
 
+	/// TRUE when the target's accounts came back empty and we hailed them anyway.
+	/// Credits are off the table entirely; only cargo settles this.
+	var/barter_only = FALSE
+	/// How many impatience warnings we've sent, so the barter demand can escalate
+	/// once the crew has stalled past the first one.
+	var/warnings_sent = 0
+	/// Whether the barter demand has already been raised for stalling (once only).
+	var/barter_escalated = FALSE
+
 	/// Faction dialog handler for personality
 	var/datum/pirate_faction_dialog/dialog
 
@@ -53,7 +62,7 @@
 	/// Multiplier applied to demand when caught fleeing
 	var/flee_penalty_multiplier = 1.5
 
-/datum/pirate_negotiation/New(obj/structure/overmap/ship/npc/pirate/pirate, obj/structure/overmap/ship/player, obj/machinery/holopad/ship_comms/pad)
+/datum/pirate_negotiation/New(obj/structure/overmap/ship/npc/pirate/pirate, obj/structure/overmap/ship/player, obj/machinery/holopad/pad)
 	. = ..()
 	if(!pirate || !player || !pad)
 		qdel(src)
@@ -62,6 +71,11 @@
 	pirate_ship = pirate
 	player_ship = player
 	holopad = pad
+
+	// The AI flags a hail raised against an empty account - that negotiation is
+	// settled in cargo, not credits.
+	var/datum/ai_controller/npc_ship/hailing_controller = pirate.ai_controller
+	barter_only = !!hailing_controller?.blackboard[BB_NPC_BROKE_BARTER]
 
 	// Get faction dialog type from pirate ship
 	var/dialog_type = pirate.negotiation_dialog_type || /datum/pirate_faction_dialog
@@ -96,6 +110,7 @@
 	if(holopad)
 		UnregisterSignal(holopad, COMSIG_QDELETING)
 		holopad.active_negotiation = null
+		holopad.SetLightsAndPower() // restore baseline lighting (negotiation lit the pad manually)
 		holopad.update_appearance(UPDATE_ICON_STATE)
 
 	// Cancel timeout timer
@@ -165,7 +180,7 @@
 		player_ship?.ship_notify("[pirate_ship?.name] has interdicted your ship! Tribute demand increased from [old_demand] to [demanded_credits] credits!", "NEGOTIATION", SHIP_NOTIFY_DANGER, 'voidcrew/sound/alert3.ogg', 25)
 	else
 		// Second attempt - they didn't learn, open fire
-		pirate_say(dialog.get_movement_betrayal_line())
+		pirate_say(dialog.get_movement_betrayal_line(is_siphon_shakedown()))
 
 		// Announce to player ship
 		player_ship?.ship_notify("[pirate_ship?.name] is opening fire - you tried to flee twice!", "COMBAT", SHIP_NOTIFY_DANGER, 'voidcrew/sound/alert3.ogg', 25)
@@ -176,10 +191,33 @@
 // ========== NEGOTIATION FLOW ==========
 
 /**
+ * TRUE when the threat behind this negotiation is the data siphon rather than
+ * guns or a boarding party - a yellow-band shakedown.
+ *
+ * Read live off the AI, the same call it makes when it escalates, so the dialog
+ * can never promise a broadside the band forbids the pirate from firing.
+ */
+/datum/pirate_negotiation/proc/is_siphon_shakedown()
+	var/datum/ai_controller/npc_ship/controller = pirate_ship?.ai_controller
+	return controller?.hail_escalates_to_siphon()
+
+/**
  * Calculate the tribute demand based on player wealth, combat state, and faction.
  * Also picks a random item demand as an alternative.
  */
 /datum/pirate_negotiation/proc/calculate_demand()
+	// Barter negotiations skip the credit maths entirely - we already scanned this
+	// ship and found nothing worth taking, so quoting them a price would just be a
+	// demand they cannot meet.
+	if(barter_only)
+		demanded_credits = 0
+		var/list/barter_demand = length(pirate_ship.fixed_item_demand) ? pirate_ship.fixed_item_demand : pick_pirate_item_demand()
+		if(barter_demand && length(barter_demand) >= 3)
+			demanded_item_type = barter_demand[1]
+			demanded_item_quantity = barter_demand[2]
+			demanded_item_name = barter_demand[3]
+		return
+
 	var/base_demand = 0
 
 	// Factor 1: Player ship wealth (25% of their balance) - expensive!
@@ -193,6 +231,13 @@
 			if(NPC_COMBAT_IDLE, NPC_COMBAT_SCANNING)
 				base_demand *= 0.8  // Cheaper to pay before combat
 				preemptive = TRUE
+			if(NPC_COMBAT_HAILING)
+				// A yellow-band shakedown is bidding against its own siphon, which
+				// takes the same 25% by force if the crew stonewalls it. Undercut
+				// that so answering the hail is the cheaper way out.
+				if(controller.hail_escalates_to_siphon())
+					base_demand *= 0.8
+					preemptive = TRUE
 			if(NPC_COMBAT_ENGAGING)
 				base_demand *= 1.0  // Standard rate
 			if(NPC_COMBAT_COMBAT)
@@ -216,8 +261,9 @@
 	if(demanded_credits < min_demand)
 		demanded_credits = min_demand
 
-	// Pick a random item demand as alternative
-	var/list/item_demand = pick_pirate_item_demand()
+	// Pick a random item demand as alternative; ships with a fixed demand
+	// (customs patrols after specific contraband) always ask for that instead
+	var/list/item_demand = length(pirate_ship.fixed_item_demand) ? pirate_ship.fixed_item_demand : pick_pirate_item_demand()
 	if(item_demand && length(item_demand) >= 3)
 		demanded_item_type = item_demand[1]
 		demanded_item_quantity = item_demand[2]
@@ -232,6 +278,11 @@
 
 	// Calculate what we're demanding
 	calculate_demand()
+
+	// A barter negotiation with nothing to ask for has no way to succeed, so don't
+	// open one - let the caller fall through to the boarding path instead.
+	if(barter_only && !demanded_item_type)
+		return FALSE
 
 	// Tell the pirate AI to pause
 	var/datum/ai_controller/npc_ship/controller = pirate_ship.ai_controller
@@ -261,7 +312,10 @@
 	SEND_SIGNAL(player_ship, COMSIG_SHIP_HAILED, src)
 
 	// Pirate announces their demands
-	pirate_say(dialog.get_demand_line(demanded_credits, demanded_item_quantity, demanded_item_name))
+	if(barter_only)
+		pirate_say(dialog.get_barter_demand_line(demanded_item_quantity, demanded_item_name))
+	else
+		pirate_say(dialog.get_demand_line(demanded_credits, demanded_item_quantity, demanded_item_name))
 
 	// After a brief pause, warn about escape attempts
 	addtimer(CALLBACK(src, PROC_REF(say_escape_warning)), 3 SECONDS)
@@ -273,26 +327,19 @@
  */
 /datum/pirate_negotiation/proc/link_ship_mission_pads()
 	if(!player_ship)
-		message_admins("DEBUG: link_ship_mission_pads - no player_ship")
 		return
-
-	message_admins("DEBUG: link_ship_mission_pads - player_ship=[player_ship], linked_mission_pads=[length(player_ship.linked_mission_pads)]")
 
 	// Use the ship's registered mission pads
 	if(length(player_ship.linked_mission_pads))
 		for(var/obj/machinery/mission_pad/pad as anything in player_ship.linked_mission_pads)
 			link_mission_pad(pad)
-		message_admins("DEBUG: linked [length(tribute_pads)] pads from ship registry")
 		return
 
 	// Fallback: search through shuttle areas (in case pads haven't registered yet)
-	message_admins("DEBUG: Trying fallback - shuttle=[player_ship.shuttle], shuttle_areas=[player_ship.shuttle?.shuttle_areas ? length(player_ship.shuttle.shuttle_areas) : "null"]")
 	if(player_ship.shuttle?.shuttle_areas)
 		for(var/area/ship_area as anything in player_ship.shuttle.shuttle_areas)
 			for(var/obj/machinery/mission_pad/found_pad in ship_area)
 				link_mission_pad(found_pad)
-				message_admins("DEBUG: Found pad [found_pad] in area [ship_area]")
-	message_admins("DEBUG: After fallback, tribute_pads=[length(tribute_pads)]")
 
 /**
  * Spawn the pirate hologram on the holopad.
@@ -346,9 +393,9 @@
 		player_ship?.ship_notify("[pirate_ship.name] has accepted tribute and is disengaging.", "COMMS", SHIP_NOTIFY_NOTICE, 'voidcrew/sound/notify.ogg', 50)
 	else
 		if(reason == "timeout")
-			pirate_say(dialog.get_timeout_line())
+			pirate_say(dialog.get_timeout_line(is_siphon_shakedown()))
 		else if(reason == "refused")
-			pirate_say(dialog.get_rejection_line())
+			pirate_say(dialog.get_rejection_line(is_siphon_shakedown()))
 		// else silent failure (destroyed, etc.)
 
 	// Send signal
@@ -371,7 +418,36 @@
 /datum/pirate_negotiation/proc/send_timeout_warning(seconds_remaining)
 	if(negotiation_state != NEGOTIATION_ACTIVE && negotiation_state != NEGOTIATION_PAYING)
 		return
+
+	warnings_sent++
+
+	// Stalling a barter costs you. Once you've let a warning go by without putting
+	// anything on the pad, the price of walking away goes up by a unit.
+	if(try_escalate_barter_demand())
+		return
+
 	pirate_say(dialog.get_impatience_line(seconds_remaining))
+
+/**
+ * Raise a barter demand when the crew stalls past the first impatience warning
+ * without handing anything over. Happens at most once per negotiation.
+ * Returns TRUE if the demand was escalated (and announced).
+ */
+/datum/pirate_negotiation/proc/try_escalate_barter_demand()
+	if(!barter_only || barter_escalated)
+		return FALSE
+	if(warnings_sent < NEGOTIATION_BARTER_ESCALATE_WARNING)
+		return FALSE
+	// Handing over part of the demand counts as cooperating - don't punish that.
+	if(items_received > 0)
+		return FALSE
+
+	barter_escalated = TRUE
+	demanded_item_quantity += NEGOTIATION_BARTER_ESCALATE_AMOUNT
+
+	pirate_say(dialog.get_barter_escalation_line(get_remaining_items(), demanded_item_name))
+	player_ship?.ship_notify("[pirate_ship.name] has raised their demand to [demanded_item_quantity] [demanded_item_name].", "COMMS", SHIP_NOTIFY_WARNING, 'voidcrew/sound/warn4.ogg', 25)
+	return TRUE
 
 // ========== PAYMENT HANDLING ==========
 
@@ -383,11 +459,23 @@
 	if(negotiation_state != NEGOTIATION_ACTIVE && negotiation_state != NEGOTIATION_PAYING)
 		return FALSE
 
-	// Deduct from player account
-	if(!player_ship.ship_account?.has_money(demanded_credits))
+	// We scanned their accounts and came up empty - this one is settled in cargo.
+	if(barter_only)
+		if(COOLDOWN_FINISHED(src, rejection_message_cooldown))
+			pirate_say("Keep your pocket change. I want [get_remaining_items()] [demanded_item_name].")
+			COOLDOWN_START(src, rejection_message_cooldown, 2 SECONDS)
 		return FALSE
 
-	player_ship.ship_account.adjust_money(-demanded_credits)
+	// Deduct from player account. Balance check rather than has_money(), and a forced
+	// withdrawal, because our own siphon may have their accounts frozen - paying us off
+	// is the way out of that, so it has to go through.
+	if((player_ship.ship_account?.account_balance || 0) < demanded_credits)
+		return FALSE
+
+	player_ship.ship_account.forced_withdraw(demanded_credits, "Piracy: tribute")
+	// The tribute goes into the pirate's hold rather than out of the economy, so a
+	// crew that pays up and then wins the rematch can siphon its own money back
+	pirate_ship?.ship_account?.adjust_money(demanded_credits, "Hold: tribute from [player_ship.name]")
 
 	// Payment complete!
 	end_negotiation(success = TRUE, reason = "payment_complete")
@@ -398,18 +486,14 @@
  * Returns TRUE if item was accepted, FALSE otherwise.
  */
 /datum/pirate_negotiation/proc/process_item_payment(obj/item/item)
-	message_admins("DEBUG process_item_payment: state=[negotiation_state], demanded_type=[demanded_item_type], item=[item.type]")
 	if(negotiation_state != NEGOTIATION_ACTIVE && negotiation_state != NEGOTIATION_PAYING)
-		message_admins("DEBUG process_item_payment: wrong state (need ACTIVE=1 or PAYING=2, got [negotiation_state])")
 		return FALSE
 
 	if(!demanded_item_type)
-		message_admins("DEBUG process_item_payment: no demanded_item_type")
 		return FALSE
 
 	// Check if item matches demanded type
 	if(!istype(item, demanded_item_type))
-		message_admins("DEBUG process_item_payment: type mismatch - wanted [demanded_item_type], got [item.type]")
 		// Debounce rejection messages to prevent spam when stacks are dropped
 		if(COOLDOWN_FINISHED(src, rejection_message_cooldown))
 			pirate_say("That's not what I asked for. I want [demanded_item_name]!")
@@ -497,7 +581,7 @@
 		return  // Negotiation ended before warning
 	if(!dialog)
 		return
-	pirate_say(dialog.get_escape_warning_line())
+	pirate_say(dialog.get_escape_warning_line(is_siphon_shakedown()))
 
 // ========== MISSION PAD LINKING ==========
 

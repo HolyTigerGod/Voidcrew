@@ -183,6 +183,7 @@ Possible to do for anyone motivated enough:
 		replay_start()
 
 /obj/machinery/holopad/Destroy()
+	stop_hail_ringing() // VOIDCREW EDIT ADDITION - pirate hails (voidcrew/modules/npc_ships/code/negotiation/pirate_comms_holopad.dm)
 	if(outgoing_call)
 		outgoing_call.ConnectionFailure(src)
 
@@ -228,6 +229,7 @@ Possible to do for anyone motivated enough:
 	. = ..()
 	if(isAI(user) || in_range(user, src) || isobserver(user))
 		. += span_notice("The status display reads: Current projection range: <b>[holo_range]</b> units.")
+	. += voidcrew_comms_examine() // VOIDCREW EDIT ADDITION - incoming pirate hail / negotiation status
 
 	if(!isAI(user))
 		return
@@ -313,6 +315,7 @@ Possible to do for anyone motivated enough:
 			"ref" = REF(HC)
 		)
 		data["holo_calls"] += list(call_data)
+	data["holo_calls"] += voidcrew_hail_call_data() // VOIDCREW EDIT ADDITION - pirate hails ride the incoming-call list
 	return data
 
 /obj/machinery/holopad/ui_act(action, list/params, datum/tgui/ui, datum/ui_state/state)
@@ -343,6 +346,9 @@ Possible to do for anyone motivated enough:
 			if(outgoing_call)
 				return
 			if(usr.loc == loc)
+				// VOIDCREW EDIT CHANGE BEGIN - site-aware dial list: own ship by area, other
+				// ships/outposts by name (voidcrew/modules/holopads/ship_holocall.dm)
+				/* VOIDCREW EDIT ORIGINAL:
 				var/list/callnames = list()
 				for(var/I in holopads)
 					var/area/A = get_area(I)
@@ -350,6 +356,13 @@ Possible to do for anyone motivated enough:
 						LAZYADD(callnames[A], I)
 				callnames -= get_area(src)
 				var/result = tgui_input_list(usr, "Choose an area to call", "Holocall", sort_names(callnames))
+				*/
+				var/list/callnames = voidcrew_holocall_targets()
+				if(!length(callnames))
+					to_chat(usr, span_warning("No reachable holopads."))
+					return
+				var/result = tgui_input_list(usr, "Choose a destination to call", "Holocall", callnames)
+				// VOIDCREW EDIT CHANGE END
 				if(isnull(result))
 					return
 				if(QDELETED(usr) || outgoing_call)
@@ -357,7 +370,7 @@ Possible to do for anyone motivated enough:
 				if(usr.loc == loc)
 					var/input = text2num(params["headcall"])
 					var/headcall = input == 1 ? TRUE : FALSE
-					var/datum/holocall/holo_call = new(usr, src, callnames[result], headcall)
+					var/datum/holocall/holo_call = new /datum/holocall/voidcrew(usr, src, callnames[result], headcall) // VOIDCREW EDIT CHANGE - was `new(...)`; subtype handles cross-ship transit drops
 					if(QDELETED(holo_call)) //can delete itself if the target pad was destroyed
 						return FALSE
 					calling = TRUE
@@ -365,6 +378,10 @@ Possible to do for anyone motivated enough:
 			else
 				to_chat(usr, span_warning("You must stand on the holopad to make a call!"))
 		if("connectcall")
+			// VOIDCREW EDIT ADDITION BEGIN - answering a pirate hail (pirate_comms_holopad.dm)
+			if(voidcrew_try_answer_hail(params["holopad"], usr))
+				return TRUE
+			// VOIDCREW EDIT ADDITION END
 			var/datum/holocall/call_to_connect = locate(params["holopad"]) in holo_calls
 			if(!QDELETED(call_to_connect))
 				call_to_connect.Answer(src)
@@ -514,7 +531,7 @@ Possible to do for anyone motivated enough:
 	if(outgoing_call)
 		outgoing_call.Check()
 
-	var/are_ringing = FALSE
+	var/are_ringing = incoming_hail // VOIDCREW EDIT CHANGE - was `FALSE`; a pirate hail rings the pad with no holocall behind it, and this proc would clear the icon two seconds later (pirate_comms_holopad.dm)
 
 	for(var/datum/holocall/holocall as anything in holo_calls)
 		if(holocall.connected_holopad == src)
@@ -613,7 +630,7 @@ For the other part of the code, check silicon say.dm. Particularly robot talk.*/
 	if(panel_open)
 		icon_state = "[base_icon_state]_open"
 		return ..()
-	icon_state = "[base_icon_state][(total_users || replay_mode) ? 1 : 0]"
+	icon_state = "[base_icon_state][(total_users || replay_mode || active_negotiation) ? 1 : 0]" // VOIDCREW EDIT CHANGE - pirate negotiation hologram lights the pad
 	return ..()
 
 /obj/machinery/holopad/proc/set_holo(datum/owner, obj/effect/overlay/holo_pad_hologram/h)

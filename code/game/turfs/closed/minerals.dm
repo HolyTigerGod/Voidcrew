@@ -66,11 +66,15 @@
 		return
 
 	var/obj/item/held_item = bumping.get_active_held_item()
-	// !held_item exists to be nice to snow. the other bit is for pickaxes obviously
-	if(!held_item)
+	var/obj/item/mining_tool = held_item
+	// Prefer the selected tool, then a mining tool held in another hand. Do not
+	// switch hands or send a click with the active item, which might be a weapon.
+	if(mining_tool?.tool_behaviour != TOOL_MINING)
+		mining_tool = bumping.is_holding_tool_quality(TOOL_MINING)
+	if(mining_tool)
+		attackby(mining_tool, bumping)
+	else if(!held_item) // Preserve empty-hand bump digging for snow and mining arms.
 		INVOKE_ASYNC(bumping, TYPE_PROC_REF(/mob, ClickOn), src)
-	else if(held_item.tool_behaviour == TOOL_MINING)
-		attackby(held_item, bumping)
 
 /turf/closed/mineral/proc/Spread_Vein()
 	var/spreadChance = initial(mineralType.spreadChance)
@@ -178,7 +182,12 @@
 
 	balloon_alert(user, "picking...")
 
-	if(!I.use_tool(src, user, tool_mine_speed, volume=50))
+	// do_after already watches the active hand. An off-hand tool needs its own
+	// check so dropping or stowing it also interrupts mining.
+	var/datum/callback/held_tool_check
+	if(I != user.get_active_held_item() && user.is_holding(I))
+		held_tool_check = CALLBACK(user, TYPE_PROC_REF(/mob, is_holding), I)
+	if(!I.use_tool(src, user, tool_mine_speed, volume=50, extra_checks=held_tool_check))
 		TIMER_COOLDOWN_END(src, REF(user)) //if we fail we can start again immediately
 		return
 	if(ismineralturf(src))
@@ -212,6 +221,7 @@
 	if(istype(user))
 		SEND_SIGNAL(user, COMSIG_MOB_MINED, src, exp_multiplier)
 	if(mineralType && (mineralAmt > 0))
+		mineralAmt = zone_scaled_ore_amount(mineralAmt) // VOIDCREW EDIT: deeper-zone planets yield more ore per wall (see voidcrew/turfs/closed/minerals.dm)
 		new mineralType(src, mineralAmt)
 		SSblackbox.record_feedback("tally", "ore_mined", mineralAmt, mineralType)
 	if(spawned_boulder)
@@ -428,9 +438,11 @@
 	smoothing_flags = SMOOTH_BITMASK | SMOOTH_BORDER
 	canSmoothWith = SMOOTH_GROUP_CLOSED_TURFS
 	defer_change = TRUE
-	turf_type = /turf/open/misc/asteroid/snow/icemoon
-	baseturfs = /turf/open/misc/asteroid/snow/icemoon
-	initial_gas_mix = ICEMOON_DEFAULT_ATMOS
+	// VOIDCREW EDIT: mined walls must yield the FROZEN breathable floor, the upstream icemoon
+	// turfs are planetary ICEMOON, and every dug tile on a FROZEN planet churns atmos forever
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
+	initial_gas_mix = FROZEN_ATMOS
 	weak_turf = TRUE
 	proximity_based = TRUE
 
@@ -453,6 +465,7 @@
 		/obj/item/stack/ore/titanium = 11,
 		/obj/item/stack/ore/uranium = 5,
 		/turf/closed/mineral/gibtonite/ice/icemoon = 4,
+		/turf/closed/mineral/glacial = 5, // VOIDCREW EDIT: glacial core veins, the ice planets' trade good (see voidcrew/modules/trade/planetary_goods.dm)
 	)
 
 /// Near exact same subtype as parent, just used in ruins to prevent other ruins/chasms from spawning on top of it.
@@ -462,7 +475,7 @@
 	turf_flags = NO_RUINS
 
 /turf/closed/mineral/random/snow/underground
-	baseturfs = /turf/open/misc/asteroid/snow/icemoon
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable // VOIDCREW EDIT (see parent)
 	// abundant ore
 	mineralChance = 20
 
@@ -524,9 +537,9 @@
 	smoothing_flags = SMOOTH_BITMASK | SMOOTH_BORDER
 	canSmoothWith = SMOOTH_GROUP_CLOSED_TURFS
 	defer_change = TRUE
-	turf_type = /turf/open/misc/asteroid/snow/icemoon
-	baseturfs = /turf/open/misc/asteroid/snow/icemoon
-	initial_gas_mix = ICEMOON_DEFAULT_ATMOS
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable // VOIDCREW EDIT (see random/snow)
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
+	initial_gas_mix = FROZEN_ATMOS
 	defer_change = TRUE
 
 /turf/closed/mineral/random/labormineral/ice/mineral_chances()
@@ -712,15 +725,16 @@
 	defer_change = TRUE
 
 /turf/closed/mineral/snowmountain/icemoon
-	turf_type = /turf/open/misc/asteroid/snow/icemoon
-	baseturfs = /turf/open/misc/asteroid/snow/icemoon
-	initial_gas_mix = ICEMOON_DEFAULT_ATMOS
+	// VOIDCREW EDIT: dig into FROZEN breathable floor, not planetary-ICEMOON (churns vs FROZEN planets)
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
+	initial_gas_mix = FROZEN_ATMOS
 
 /// This snowy mountain will never be scraped away for any reason what so ever.
 /turf/closed/mineral/snowmountain/icemoon/unscrapeable
 	turf_flags = IS_SOLID | NO_CLEARING
-	turf_type = /turf/open/misc/asteroid/snow/icemoon/do_not_scrape
-	baseturfs = /turf/open/misc/asteroid/snow/icemoon/do_not_scrape
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable // VOIDCREW EDIT (see parent)
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
 
 /turf/closed/mineral/snowmountain/cavern
 	name = "ice cavern rock"
@@ -732,9 +746,10 @@
 	turf_type = /turf/open/misc/asteroid/snow/ice
 
 /turf/closed/mineral/snowmountain/cavern/icemoon
-	baseturfs = /turf/open/misc/asteroid/snow/ice/icemoon
-	turf_type = /turf/open/misc/asteroid/snow/ice/icemoon
-	initial_gas_mix = ICEMOON_DEFAULT_ATMOS
+	// VOIDCREW EDIT: snow/ice/icemoon is planetary ICEMOON, dig into FROZEN breathable instead
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable
+	initial_gas_mix = FROZEN_ATMOS
 
 //For when you want genuine, real snowy mountainside in your kitchen's cold room.
 /turf/closed/mineral/snowmountain/coldroom
@@ -804,7 +819,7 @@
 		stage = GIBTONITE_ACTIVE
 		visible_message(span_danger("There's gibtonite inside! It's going to explode!"))
 
-		var/notify_admins = !is_mining_level(z)
+		var/notify_admins = !is_mining_level(z) && !is_reserved_level(z) // VOIDCREW EDIT: asteroid encounters load into reserved-z turf reservations; gibtonite there is expected mining, not smuggled ordnance
 
 		if(user)
 			log_bomber(user, "has triggered a gibtonite deposit reaction via", src, null, notify_admins)
@@ -891,9 +906,10 @@
 	defer_change = TRUE
 
 /turf/closed/mineral/gibtonite/ice/icemoon
-	turf_type = /turf/open/misc/asteroid/snow/ice/icemoon
-	baseturfs = /turf/open/misc/asteroid/snow/ice/icemoon
-	initial_gas_mix = ICEMOON_DEFAULT_ATMOS
+	// VOIDCREW EDIT: snow/ice/icemoon is planetary ICEMOON, dig into FROZEN breathable instead
+	turf_type = /turf/open/misc/asteroid/snow/icemoon/breathable
+	baseturfs = /turf/open/misc/asteroid/snow/icemoon/breathable
+	initial_gas_mix = FROZEN_ATMOS
 
 /turf/closed/mineral/strong
 	name = "Very strong rock"

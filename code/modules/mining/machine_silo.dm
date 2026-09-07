@@ -244,6 +244,14 @@
 	data["materials"] =  materials.ui_data()
 
 	data["machines"] = list()
+	// VOIDCREW EDIT: a connection whose machine died (or hard-deleted to a null entry)
+	// must not crash the whole window. Pruned from the real list, not skipped in the
+	// data, because ui_act's hold/remove actions index into ore_connected_machines -
+	// a display list that skips entries would point those buttons at the wrong machine.
+	for(var/datum/component/remote_materials/stale as anything in ore_connected_machines.Copy())
+		if(!stale || QDELETED(stale) || QDELETED(stale.parent))
+			ore_connected_machines -= stale
+	// VOIDCREW EDIT END
 	for(var/datum/component/remote_materials/remote as anything in ore_connected_machines)
 		var/atom/parent = remote.parent
 		data["machines"] += list(
@@ -270,7 +278,7 @@
 			)
 		)
 	data["banned_users"] = banned_users
-	data["ID_required"] = ID_required
+	data["id_required"] = ID_required
 
 	return data
 
@@ -335,6 +343,7 @@
 
 		if("toggle_restrict")
 			attempt_toggle_restrict(usr)
+			return TRUE
 /**
  * Called from the ore silo's UI, when someone attempts to (un)ban a user from using the ore silo.
  * The person doing the banning should have at least QM access. Unless this is emagged. Not modifiable by silicons unless emagged.
@@ -568,6 +577,16 @@
 	amount = _amount
 	noun = _noun
 	materials = mats.Copy()
+	// VOIDCREW EDIT ADDITION START - machine-driven silo traffic has no user attached.
+	// Conveyor deposits into the ORM, exosuit fabricator sheet withdrawals, recyclers,
+	// smelters and the stacking machine all reach here with user_data unset. Upstream then
+	// runtimes on user_data["name"] below ("bad index"), and the entry it leaves behind
+	// carries a null user record that crashes the silo's whole TGUI window when the Logs
+	// tab renders it. ID_DATA(null) is the same "nobody could be identified" record the
+	// rest of the material code uses for unattended actions.
+	if(isnull(user_data))
+		user_data = ID_DATA(null)
+	// VOIDCREW EDIT ADDITION END
 	src.user_data = user_data
 	var/list/data = list(
 		"machine_name" = machine_name,

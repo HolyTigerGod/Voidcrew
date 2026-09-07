@@ -4,89 +4,31 @@
 /area/template_noop)
 "b" = (
 /turf/open/floor/plating{
-	icon_state = "panelscorched";
-	initial_gas_mix = "ws_atmos"
+	burnt = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 "c" = (
-/obj/effect/spawner/structure/window/plasma/reinforced,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/obj/effect/spawner/structure/window/reinforced/plasma,
+/turf/open/floor/plating,
+/area/ruin/unpowered)
+"d" = (
+/obj/effect/decal/cleanable/dirt,
+/obj/structure/closet/crate/zone_loot/industrial,
+/turf/open/floor/engine,
 /area/ruin/unpowered)
 "e" = (
 /turf/closed/wall/r_wall,
 /area/ruin/unpowered)
 "f" = (
 /turf/open/misc/wasteland/lit,
-/area/whitesands/surface/outdoors)
+/area/overmap_encounter/planetoid/wasteland)
 "g" = (
-/obj/effect/turf_decal/industrial/outline/yellow{
+/obj/effect/turf_decal/siding/yellow{
 	dir = 1
 	},
 /turf/open/floor/iron/dark,
 /area/overmap_encounter/planetoid/wasteland)
-"i" = (
-/obj/effect/decal/cleanable/greenglow,
-/obj/item/disk/plantgene,
-/turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
-	},
-/area/ruin/unpowered)
-"j" = (
-/obj/machinery/atmospherics/pipe/simple/general/visible{
-	dir = 10
-	},
-/turf/closed/wall/r_wall,
-/area/ruin/unpowered)
-"k" = (
-/obj/structure/window/plasma/reinforced,
-/obj/machinery/power/rad_collector/anchored,
-/obj/machinery/atmospherics/pipe/simple/general/visible{
-	dir = 10
-	},
-/turf/open/misc/wasteland/lit,
-/area/overmap_encounter/planetoid/wasteland)
-"n" = (
-/obj/effect/decal/cleanable/dirt,
-/turf/open/floor/plating{
-	icon_state = "panelscorched";
-	initial_gas_mix = "ws_atmos"
-	},
-/area/overmap_encounter/planetoid/wasteland)
-"o" = (
-/obj/effect/decal/cleanable/dirt,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
-/area/ruin/unpowered)
-"r" = (
-/obj/machinery/atmospherics/components/unary/vent_scrubber/on,
-/obj/effect/decal/cleanable/dirt,
-/turf/open/floor/engine,
-/area/ruin/unpowered)
-"s" = (
-/obj/effect/turf_decal/industrial/outline/yellow{
-	dir = 1
-	},
-/obj/machinery/portable_atmospherics/canister/nitrogen,
-/turf/open/floor/iron/dark,
-/area/overmap_encounter/planetoid/wasteland)
-"t" = (
-/obj/machinery/atmospherics/components/unary/vent_scrubber/on,
-/turf/open/floor/engine,
-/area/ruin/unpowered)
-"u" = (
-/obj/machinery/atmospherics/pipe/simple/general/visible{
-	dir = 9
-	},
-/turf/closed/wall/r_wall,
-/area/ruin/unpowered)
-"w" = (
-/turf/closed/wall/r_wall,
-/area/overmap_encounter/planetoid/wasteland)
-"x" = (
+"h" = (
 /obj/effect/mob_spawn/corpse/human/engineer{
 	gender = "female";
 	mob_species = null
@@ -102,44 +44,89 @@
 /obj/item/rcd_ammo,
 /obj/item/rcd_ammo,
 /obj/item/rcd_ammo,
+/obj/effect/zone_mobs/robot,
 /turf/open/floor/engine,
 /area/ruin/unpowered)
-"z" = (
+"i" = (
+/obj/effect/decal/cleanable/greenglow,
+/turf/open/floor/plating{
+	broken = 1
+	},
+/area/ruin/unpowered)
+"j" = (
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
+	dir = 10
+	},
+/turf/closed/wall/r_wall,
+/area/ruin/unpowered)
+"k" = (
+/obj/structure/window/plasma/fulltile,
+/obj/machinery/power/rtg,
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
+	dir = 10
+	},
+/turf/open/misc/wasteland/lit,
+/area/overmap_encounter/planetoid/wasteland)
+"n" = (
 /obj/effect/decal/cleanable/dirt,
 /turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
+	burnt = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
+"o" = (
+/obj/effect/decal/cleanable/dirt,
+/turf/open/floor/plating,
+/area/ruin/unpowered)
+"r" = (
+/obj/machinery/atmospherics/components/unary/vent_scrubber/on,
+/obj/effect/decal/cleanable/dirt,
+/turf/open/floor/engine,
+/area/ruin/unpowered)
+"s" = (
+/obj/effect/turf_decal/siding/yellow{
+	dir = 1
+	},
+/obj/machinery/portable_atmospherics/canister/nitrogen,
+/turf/open/floor/iron/dark,
+/area/overmap_encounter/planetoid/wasteland)
+"t" = (
+/obj/machinery/atmospherics/components/unary/vent_scrubber/on,
+/turf/open/floor/engine,
+/area/ruin/unpowered)
+"u" = (
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
+	dir = 9
+	},
+/turf/closed/wall/r_wall,
+/area/ruin/unpowered)
+"w" = (
+/turf/closed/wall/r_wall,
+/area/overmap_encounter/planetoid/wasteland)
+"z" = (
+/obj/effect/decal/cleanable/dirt,
+/turf/open/floor/plating,
+/area/overmap_encounter/planetoid/wasteland)
 "B" = (
-/obj/effect/turf_decal/industrial/hatch/yellow,
+/obj/effect/turf_decal/loading_area,
 /obj/effect/decal/cleanable/dirt,
 /turf/open/floor/iron/dark,
 /area/overmap_encounter/planetoid/wasteland)
-"C" = (
-/obj/effect/decal/cleanable/dirt,
-/turf/open/floor/engine,
-/area/ruin/unpowered)
 "E" = (
 /obj/effect/decal/cleanable/greenglow,
 /obj/effect/decal/cleanable/dirt,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating,
 /area/ruin/unpowered)
 "G" = (
 /obj/machinery/atmospherics/components/binary/pump{
 	dir = 8
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "H" = (
 /obj/structure/girder/displaced,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating,
 /area/overmap_encounter/planetoid/wasteland)
 "I" = (
 /obj/machinery/atmospherics/components/unary/vent_pump/on{
@@ -149,30 +136,28 @@
 /turf/open/floor/engine,
 /area/ruin/unpowered)
 "J" = (
-/obj/structure/window/plasma/reinforced{
+/obj/structure/window/plasma/fulltile{
 	dir = 1
 	},
 /obj/structure/frame/machine,
-/obj/machinery/atmospherics/pipe/simple/general/visible{
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
 	dir = 9
 	},
-/obj/machinery/atmospherics/pipe/simple/general/visible{
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
 	dir = 9
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 "L" = (
-/obj/structure/window/plasma/reinforced{
+/obj/structure/window/plasma/fulltile{
 	dir = 1
 	},
-/obj/machinery/power/rad_collector/anchored,
-/obj/machinery/atmospherics/pipe/manifold/general/visible,
+/obj/machinery/power/rtg,
+/obj/machinery/atmospherics/pipe/smart/manifold/general/visible,
 /turf/open/floor/plating{
-	icon_state = "platingdmg1";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 "M" = (
@@ -180,42 +165,36 @@
 /turf/open/floor/engine,
 /area/overmap_encounter/planetoid/wasteland)
 "Q" = (
-/obj/machinery/atmospherics/pipe/simple/general/visible{
+/obj/machinery/atmospherics/pipe/smart/simple/general/visible{
 	dir = 6
 	},
 /obj/structure/girder,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating,
 /area/overmap_encounter/planetoid/wasteland)
 "R" = (
-/obj/structure/window/plasma/reinforced,
-/obj/machinery/power/rad_collector/anchored,
-/obj/machinery/atmospherics/pipe/manifold/general/visible{
+/obj/structure/window/plasma/fulltile,
+/obj/machinery/power/rtg,
+/obj/machinery/atmospherics/pipe/smart/manifold/general/visible{
 	dir = 1
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 "S" = (
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating,
 /area/overmap_encounter/planetoid/wasteland)
 "T" = (
-/obj/structure/window/plasma/reinforced{
+/obj/structure/window/plasma/fulltile{
 	dir = 1
 	},
 /obj/structure/frame/machine,
-/obj/machinery/atmospherics/pipe/manifold/general/visible,
+/obj/machinery/atmospherics/pipe/smart/manifold/general/visible,
 /turf/open/floor/engine,
 /area/overmap_encounter/planetoid/wasteland)
 "V" = (
 /turf/open/floor/plating{
-	icon_state = "platingdmg1";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 "W" = (
@@ -225,15 +204,12 @@
 	req_access_txt = "10"
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg2";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/ruin/unpowered)
 "X" = (
 /obj/structure/girder,
-/turf/open/floor/plating{
-	initial_gas_mix = "ws_atmos"
-	},
+/turf/open/floor/plating,
 /area/overmap_encounter/planetoid/wasteland)
 "Y" = (
 /obj/machinery/door/airlock/engineering/glass/critical{
@@ -244,14 +220,13 @@
 /turf/open/floor/engine,
 /area/ruin/unpowered)
 "Z" = (
-/obj/structure/window/plasma/reinforced,
+/obj/structure/window/plasma/fulltile,
 /obj/structure/frame/machine,
-/obj/machinery/atmospherics/pipe/manifold/general/visible{
+/obj/machinery/atmospherics/pipe/smart/manifold/general/visible{
 	dir = 1
 	},
 /turf/open/floor/plating{
-	icon_state = "platingdmg1";
-	initial_gas_mix = "ws_atmos"
+	broken = 1
 	},
 /area/overmap_encounter/planetoid/wasteland)
 
@@ -271,7 +246,7 @@ s
 z
 w
 o
-x
+h
 G
 w
 g
@@ -315,7 +290,7 @@ S
 S
 k
 I
-C
+d
 t
 J
 M

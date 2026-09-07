@@ -5,7 +5,7 @@
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey
 	name = "Orbital survey console"
-	desc = "Gather data, earn research points, and control how your ship docks on celestial objects around the void."
+	desc = "Gather data, earn research points, and control how your ship docks on celestial objects around the void. Surveys only need the ship parked on the same overmap tile as the target, not docked or landed; storms can also be scanned from a few tiles away at reduced yield. On outpost ground, it imports and exports completed survey records for local research."
 	view_range = 10
 	x_offset = 0
 	y_offset = -5
@@ -18,10 +18,23 @@
 	var/list/blacklisted_mob_types = list(/mob/living/simple_animal/hostile/megafauna)
 	var/list/whitelisted_areas = list(/area/overmap_encounter, /area/space)
 	var/datum/looping_sound/sonar/soundloop
-	var/ui_user
 	var/survey_in_progress = FALSE
+	/// The celestial object the in-progress survey was started on
+	var/obj/structure/overmap/current_survey_target
 	var/datum/survey_research/data
+	var/datum/weakref/bound_ship
+	/// Unbound consoles retain their own completed-record archive. Ship data belongs to the hull.
+	var/owns_survey_data = FALSE
 	var/survey_value
+	/// Payout multiplier when the survey target sits on a nearby tile instead of
+	/// our own (storms only, see get_survey_target). Parking inside stays the
+	/// greedy play; scanning from outside is the safe one.
+	var/range_survey_value_mult = 0.6
+	/// How many overmap tiles out the at-range storm scan reaches. The helm chart
+	/// draws severity-scaled glyphs over overlapping cluster contacts, so players
+	/// cannot reliably park exactly one tile from a storm's anchor turf - this is
+	/// deliberately a short ring, not strict adjacency.
+	var/range_survey_distance = 3
 	var/survey_timer
 	var/banked_points = 0
 	var/banked_cash = 0
@@ -48,46 +61,212 @@
 
 	set_init_ports()
 
-	ship_port = SSshuttle.get_containing_shuttle(src)
-
-	if (ship_port.current_ship)
-
-		data = ship_port.current_ship.survey_data
-
-		if(!ship_port.current_ship.survey_console)
-			ship_port.current_ship.survey_console = WEAKREF(src)
-			attached_to_ship = TRUE
-			shuttleId = ship_port.shuttle_id
-			shuttlePortId = "[ship_port.shuttle_id]_custom"
+	// A console that loads with its hull is bound before anyone is aboard, so it has nobody
+	// to tell. One built mid-round announces the link the same way the multitool path does.
+	bind_to_ship(announce_link = !mapload)
+	if(!data)
+		data = new
+		owns_survey_data = TRUE
 
 	soundloop = new(src)
 
+/**
+ * Binds this console to the hull it is standing in: survey data store, ship-side console
+ * reference, docking ids, and the ship's R&D techweb.
+ *
+ * Split out of Initialize() because a console that loads with its ship (rather than being
+ * built mid-round) initialises before SSshuttle assigns port.current_ship, so all of this
+ * has to be able to run again from the COMSIG_VOIDCREW_SHIP_LOADED handler below.
+ *
+ * `announce_link` is passed down to try_link_ship_techweb(); it is FALSE on both of the
+ * paths that run before the crew exists (mapload, and the ship-load signal).
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/bind_to_ship(announce_link = TRUE)
+	if(isnull(ship_port))
+		var/obj/docking_port/mobile/containing_port = SSshuttle.get_containing_shuttle(src)
+		if(istype(containing_port, /obj/docking_port/mobile/voidcrew))
+			ship_port = containing_port
+
+	var/obj/structure/overmap/ship/our_ship = ship_port?.current_ship
+	if(isnull(our_ship))
+		return FALSE
+
+	if(owns_survey_data)
+		our_ship.survey_data.merge_completed_surveys(data)
+		QDEL_NULL(data)
+		owns_survey_data = FALSE
+	data = our_ship.survey_data
+	bound_ship = WEAKREF(our_ship)
+
+	if(!our_ship.survey_console?.resolve() || our_ship.survey_console.resolve() == src)
+		our_ship.survey_console = WEAKREF(src)
+		attached_to_ship = TRUE
+		shuttleId = ship_port.shuttle_id
+		shuttlePortId = "[ship_port.shuttle_id]_custom"
+		// Registered once here (not per-survey) - cancels in-progress surveys and
+		// clears stale custom ports whenever the ship moves
+		RegisterSignal(our_ship, COMSIG_VOIDCREW_SHIP_MOVED, PROC_REF(cancel_survey), override = TRUE)
+
+	try_link_ship_techweb(announce_link)
+	return TRUE
+
+/// Recheck physical hull identity at use time; ordinary docking keeps the same hull and data.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/validate_ship_binding()
+	var/obj/structure/overmap/ship/physical_ship = get_voidcrew_ship_for_turf(get_turf(src))
+	if(physical_ship && bound_ship?.resolve() == physical_ship && ship_port?.current_ship == physical_ship)
+		attached_to_ship = physical_ship.survey_console?.resolve() == src
+		if(!attached_to_ship && !physical_ship.survey_console?.resolve())
+			bind_to_ship(announce_link = FALSE)
+		return attached_to_ship
+	if(bound_ship)
+		var/obj/structure/overmap/ship/previous_ship = bound_ship.resolve()
+		if(previous_ship)
+			UnregisterSignal(previous_ship, list(COMSIG_VOIDCREW_SHIP_MOVED, COMSIG_VOIDCREW_SHIP_DOCKED, COMSIG_VOIDCREW_SHIP_UNDOCKED))
+			if(previous_ship.survey_console?.resolve() == src)
+				previous_ship.survey_console = null
+		bound_ship = null
+		cancel_survey()
+		if(current_user)
+			remove_eye_control(current_user)
+		// Keep only records already held by the physical console, never a live old-ship store.
+		var/datum/survey_research/archive = new
+		archive.merge_completed_surveys(data)
+		if(owns_survey_data)
+			qdel(data)
+		data = archive
+		owns_survey_data = TRUE
+		attached_to_ship = FALSE
+		ship_port = null
+		shuttle_port = null
+		shuttleId = null
+		shuttlePortId = null
+		docking_location = null
+	if(physical_ship)
+		ship_port = physical_ship.shuttle
+		bind_to_ship(announce_link = FALSE)
+	if(!data)
+		data = new
+		owns_survey_data = TRUE
+	return attached_to_ship
+
+/**
+ * A console that ships with a hull initialises inside action_load(), before the subsystem
+ * assigns port.current_ship, so bind_to_ship() above finds nothing. Finish the binding when
+ * the ship load completes; built-in-round consoles are already bound by Initialize().
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/connect_to_shuttle(mapload, obj/docking_port/mobile/port, obj/docking_port/stationary/dock)
+	. = ..()
+	var/obj/docking_port/mobile/voidcrew/ship_dock = port
+	if(!istype(ship_dock))
+		return
+	ship_port = ship_dock
+	// Binding itself is deliberately left to Initialize()/the signal below, so the console
+	// still sets shuttleId in the same order it always did.
+	if(!ship_dock.current_ship)
+		RegisterSignal(ship_dock, COMSIG_VOIDCREW_SHIP_LOADED, PROC_REF(on_ship_loaded), override = TRUE)
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/on_ship_loaded(obj/docking_port/mobile/voidcrew/source)
+	SIGNAL_HANDLER
+	UnregisterSignal(source, COMSIG_VOIDCREW_SHIP_LOADED)
+	// Roundstart / ship-purchase load: the hull is still empty, nobody would hear it.
+	bind_to_ship(announce_link = FALSE)
+
+/**
+ * Points this console at the techweb hosted by an R&D server aboard the same ship.
+ *
+ * The console is the only thing that ever hands survey data to a techweb (see
+ * /datum/techweb/have_surveys_for_node in voidcrew/modules/research/edits/_techweb.dm), so
+ * until it is linked, every survey-gated research node stays locked no matter how much the
+ * crew surveys - and nothing in game says why. Bind ourselves the way the rest of the ship's
+ * machinery does instead of requiring the multitool ritual. A link made by hand always wins:
+ * multitool_act() relinks unconditionally, and we never touch an existing link.
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/try_link_ship_techweb(announce_link = TRUE)
+	if(validate_research_site(linked_techweb) || isnull(data))
+		return FALSE
+	var/obj/structure/overmap/ship/our_ship = ship_port?.current_ship
+	if(isnull(our_ship))
+		return FALSE
+	var/datum/techweb/ship_web = our_ship.find_research_web()
+	if(isnull(ship_web))
+		return FALSE
+	if(!link_to_techweb(ship_web))
+		return FALSE
+	if(announce_link)
+		// Same line the multitool path speaks, so a self-link is not a silent one - otherwise
+		// the only way to know the console found a server is to examine it.
+		say("Linked to Server!")
+	return TRUE
+
+/// Shared body of the auto-link and multitool paths.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/link_to_techweb(datum/techweb/new_web)
+	if(!new_web || !length(new_web.techweb_servers) || !can_link_site_techweb(src, new_web))
+		return FALSE
+	if(!data)
+		data = new
+	if(linked_techweb != new_web)
+		unsync_research_servers()
+	linked_techweb = new_web
+	new_web.connected_machines |= src
+	sync_research_surveys()
+	survey_research_tiers = get_survey_research_tiers()
+	return TRUE
+
+/// The console and each physical research disk own separate, completed-record snapshots.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/sync_research_surveys()
+	validate_ship_binding()
+	if(!data || !validate_research_site(linked_techweb))
+		return FALSE
+	if(!length(linked_techweb.techweb_servers))
+		unsync_research_servers()
+		return FALSE
+	if(!linked_techweb.survey_data || linked_techweb.survey_data == data)
+		linked_techweb.survey_data = new
+	data.merge_completed_surveys(linked_techweb.survey_data)
+	linked_techweb.survey_data.merge_completed_surveys(data)
+	return TRUE
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/examine(mob/user)
+	. = ..()
+	if(linked_techweb)
+		. += span_notice("It is feeding survey data to the R&D server network of [linked_techweb.organization].")
+		return
+	. += span_warning("It is not linked to an R&D server, so surveys will not unlock survey-gated research.")
+	. += span_notice("Build an R&D server on this ship, or copy a techweb from one with a [EXAMINE_HINT("multitool")] and use it on this.")
+
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/update_survey_data()
+	sync_research_surveys()
 	var/obj/structure/overmap/object = get_current_celestial_object()
+	if(!object || !data || !is_object_surveyed(object))
+		return
 	data.update_survey_data(object)
-	update_static_data(ui_user)
+	sync_research_surveys()
+	update_static_data_for_all_viewers()
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/unsync_research_servers()
 	if(linked_techweb)
 		linked_techweb.connected_machines -= src
 		linked_techweb = null
+	survey_research_tiers = get_survey_research_tiers()
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/multitool_act(mob/living/user, obj/item/multitool/tool)
-	if(!QDELETED(tool.buffer) && istype(tool.buffer, /datum/techweb))
-		if(linked_techweb)
-			if(linked_techweb == tool.buffer)
-				say("Already linked!")
-				return
-			unsync_research_servers()
-
-		linked_techweb = tool.buffer
-		linked_techweb.survey_data = data
-		linked_techweb.connected_machines += src //connect new one
-		say("Linked to Server!")
-		return TRUE
+	if(QDELETED(tool.buffer) || !istype(tool.buffer, /datum/techweb))
+		return FALSE
+	if(!link_to_techweb(tool.buffer))
+		balloon_alert(user, "no local research server")
+		return FALSE
+	say("Linked to Server!")
+	return TRUE
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_survey_research_tiers()
-	var/list/research_tiers = list("survey_console_simple", "survey_console_advanced", "survey_console_superior", "survey_console_elite")
+	var/previous_obj_sight = obj_sight
+	var/previous_mob_sight = mob_sight
+	var/previous_view_range = view_range
+	mapping_enabled = FALSE
+	obj_sight = FALSE
+	mob_sight = FALSE
+	view_range = initial(view_range)
+	icon_scaling_amount = initial(icon_scaling_amount)
 	var/list/found_tiers = list()
 	if(debug_mode)
 		mob_sight = TRUE
@@ -96,53 +275,66 @@
 		icon_scaling_amount = 3
 		mapping_enabled = TRUE
 		found_tiers |= list("advanced", "superior", "elite", "basic")
-	else
-		if(!linked_techweb)
-			return
-		for(var/node_id in linked_techweb.researched_nodes)
-			if(node_id in research_tiers)
-				var/tier_type
-				switch(node_id)
-					if("survey_console_advanced")
-						tier_type = "advanced"
-						mapping_enabled = TRUE
-						view_range = 10
-						icon_scaling_amount = 2
-					if("survey_console_superior")
-						tier_type = "superior"
-						obj_sight = TRUE
-						view_range = 15
-						icon_scaling_amount = 2.5
-					if("survey_console_elite")
-						tier_type = "elite"
-						mob_sight = TRUE
-						view_range = 20
-						icon_scaling_amount = 3
-					else
-						tier_type = "basic"
-
-				found_tiers += tier_type
+	else if(validate_research_site(linked_techweb))
+		// Apply tiers in ascending order, independent of the disk's research/import order.
+		var/list/research_tiers = list(TECHWEB_NODE_SURVEY_CONSOLE, TECHWEB_NODE_SURVEY_CONSOLE_ADV, TECHWEB_NODE_SURVEY_CONSOLE_SUPERIOR, TECHWEB_NODE_SURVEY_CONSOLE_ELITE)
+		for(var/node_id in research_tiers)
+			if(!linked_techweb.researched_nodes[node_id])
+				continue
+			switch(node_id)
+				if(TECHWEB_NODE_SURVEY_CONSOLE)
+					found_tiers += "basic"
+				if(TECHWEB_NODE_SURVEY_CONSOLE_ADV)
+					found_tiers += "advanced"
+					mapping_enabled = TRUE
+					view_range = 10
+					icon_scaling_amount = 2
+				if(TECHWEB_NODE_SURVEY_CONSOLE_SUPERIOR)
+					found_tiers += "superior"
+					obj_sight = TRUE
+					view_range = 15
+					icon_scaling_amount = 2.5
+				if(TECHWEB_NODE_SURVEY_CONSOLE_ELITE)
+					found_tiers += "elite"
+					mob_sight = TRUE
+					view_range = 20
+					icon_scaling_amount = 3
+	if(current_user && (!mapping_enabled || (previous_obj_sight && !obj_sight) || (previous_mob_sight && !mob_sight) || view_range < previous_view_range))
+		remove_eye_control(current_user)
 	return found_tiers
 
+/// Map actions can arrive directly or from an old UI; resolve their current physical source.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/can_use_survey_map()
+	if(!validate_ship_binding())
+		return FALSE
+	survey_research_tiers = get_survey_research_tiers()
+	return mapping_enabled
+
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/Destroy()
-	. = ..()
-	var/datum/weakref/ship_link = ship_port.current_ship.survey_console
+	if(owns_survey_data)
+		QDEL_NULL(data)
 	unsync_research_servers()
-	if(!ship_link.resolve() || src == ship_link.resolve())
-		ship_port.current_ship.survey_console = null
-		attached_to_ship = FALSE
-	if(survey_disk)
+	QDEL_NULL(soundloop)
+	if(ship_port?.current_ship)
+		var/datum/weakref/ship_link = ship_port.current_ship.survey_console
+		if(!ship_link || !ship_link.resolve() || src == ship_link.resolve())
+			ship_port.current_ship.survey_console = null
+	attached_to_ship = FALSE
+	current_survey_target = null
+	if(validate_survey_disk())
 		survey_disk.forceMove(get_turf(src))
 		survey_disk = null
+	return ..()
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/attack_hand(mob/user, list/modifiers)
-	if(!attached_to_ship)
-		balloon_alert(user, "can't connect to shuttle.")
+	if(!validate_ship_binding() && !get_outpost_from_atom(src))
+		balloon_alert(user, "no ship or outpost connection")
 		to_chat(user, "Could not connect survey console to the shuttle network. Perhaps there is already a survey console on this ship?")
 		return
 	ui_interact(user)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/attackby(obj/item/D, mob/user, params)
+	validate_survey_disk()
 	if(istype(D, /obj/item/disk))
 		if(istype(D, /obj/item/disk/survey_data_disk))
 			if(survey_disk)
@@ -155,50 +347,78 @@
 		else
 			to_chat(user, span_warning("Survey console cannot accept disks in that format."))
 			return
-		playsound(src, "sound/machines/terminal/terminal_insert_disc.ogg", 80)
+		playsound(src, 'sound/machines/terminal/terminal_insert_disc.ogg', 80)
 		to_chat(user, span_notice("You insert [D] into \the [src]!"))
 		return
 	return ..()
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/ui_interact(mob/user, datum/tgui/ui)
 	. = ..()
-	ui_user = user
 	ui = SStgui.try_update_ui(user, src, ui)
 	if(!ui)
 		ui = new(user, src, "SurveyComputer", name)
 		ui.open()
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/ui_data(mob/user)
+	sync_research_surveys()
 	var/list/tgui_data = list()
-	var/obj/structure/overmap/celestial_object = get_current_celestial_object()
+	var/obj/structure/overmap/celestial_object = get_survey_target()
 	survey_research_tiers = get_survey_research_tiers()
 	tgui_data["surveyStatus"] = get_survey_status(celestial_object)
-	tgui_data["currentCelestialRef"] = celestial_object ? ref(celestial_object) : null
+	tgui_data["currentCelestialRef"] = celestial_object ? celestial_object.get_survey_identity() : null
 	tgui_data["currentCelestialType"] = celestial_object ? data.get_related_celestial_list(celestial_object.type) : null
-	tgui_data["shipMoving"] = ship_port.current_ship.is_still()
+	tgui_data["shipMoving"] = ship_port?.current_ship?.is_still() || FALSE
+	tgui_data["archiveMode"] = !attached_to_ship
+	tgui_data["researchLinked"] = !!linked_techweb
 	tgui_data["bankedPoints"] = banked_points
 	tgui_data["bankedCash"] = banked_cash
 	tgui_data["surveyValue"] = get_survey_value(celestial_object)
+	tgui_data["surveyAtRange"] = is_survey_at_range(celestial_object)
+	// So the UI can state the range rule with the real numbers instead of folklore
+	tgui_data["rangeSurveyDistance"] = range_survey_distance
+	tgui_data["rangeSurveyPercent"] = round(range_survey_value_mult * 100)
 	tgui_data["theme"] = theme
-	tgui_data["surveyDataDisk"] = survey_disk ? TRUE : FALSE
-	tgui_data["mappingEnabled"] = istype(celestial_object, /obj/structure/overmap/planet) ? mapping_enabled : FALSE
+	tgui_data["surveyDataDisk"] = validate_survey_disk()
+	tgui_data["mappingEnabled"] = (istype(celestial_object, /obj/structure/overmap/planet) || istype(celestial_object, /obj/structure/overmap/space_ruin) || istype(celestial_object, /obj/structure/overmap/event/meteor)) ? mapping_enabled : FALSE
+
+	// Everything surveyable from here, for the UI's target picker
+	var/turf/ship_turf = ship_port?.current_ship ? get_turf(ship_port.current_ship) : null
+	var/list/targets = list()
+	for(var/obj/structure/overmap/candidate as anything in get_survey_candidates())
+		var/list/values = get_survey_value(candidate)
+		var/at_range = is_survey_at_range(candidate)
+		targets += list(list(
+			"ref" = ref(candidate),
+			"name" = candidate.name,
+			"status" = get_survey_status(candidate),
+			"atRange" = at_range,
+			"dist" = (at_range && ship_turf) ? get_dist(ship_turf, get_turf(candidate)) : 0,
+			"points" = values ? values["points"] : 0,
+			"cash" = values ? values["cash"] : 0,
+			"mappable" = (istype(candidate, /obj/structure/overmap/planet) || istype(candidate, /obj/structure/overmap/space_ruin) || istype(candidate, /obj/structure/overmap/event/meteor)) ? mapping_enabled : FALSE,
+		))
+	tgui_data["surveyTargets"] = targets
 
 	return tgui_data
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/ui_static_data(mob/user)
+	sync_research_surveys()
 	. = ..()
-	.["surveyData"] = data.tgui_serialize()
+	.["surveyData"] = data?.tgui_serialize()
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/ui_act(action, params)
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/ui_act(action, list/params, datum/tgui/ui)
+	if(!validate_ship_binding())
+		if(!get_outpost_from_atom(src) || !(action in list("saveData", "downloadData", "eject", "setTheme", "refresh", "error")))
+			return TRUE
 	. = ..()
 	if(.)
 		return
 	switch(action)
 		if("survey")
-			survey_celestial_object(ui_user)
+			survey_celestial_object(ui.user, params["target_ref"])
 		if("map")
 			playsound(src, 'sound/machines/pda_button/pda_button1.ogg', 100)
-			activate_survey_map(ui_user)
+			activate_survey_map(ui.user)
 		if("printResearch")
 			print_survey_notes()
 		if("cashOut")
@@ -206,24 +426,37 @@
 		if("setTheme")
 			theme = params["theme"]
 		if("saveData")
-			save_survey_data()
+			save_survey_data(ui.user)
 		if("downloadData")
-			download_survey_data()
+			download_survey_data(ui.user)
 		if("refresh")
 			update_survey_data()
 		if("eject")
-			eject_disk()
+			eject_disk(ui.user)
 		if("error")
 			playsound(src, 'sound/machines/terminal/terminal_error.ogg', 100)
 
 	return TRUE
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_current_celestial_object()
-	var/list/blacklisted_types = list(
+/// Overmap types the console refuses to treat as survey targets
+/// Callers must treat the returned list as READ-ONLY - both are shared statics.
+/// get_current_celestial_object() is now on the per-landing-turf path (see
+/// checkLandingTurf()), which runs for every tile of the projected berth on every eye
+/// step, so this may not allocate a list per call any more.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_blacklisted_overmap_types()
+	var/static/list/debug_blacklist = list(
 		/obj/structure/overmap/ship,
 	)
-	if(!debug_mode)
-		blacklisted_types += /obj/structure/overmap/planet/empty
+	var/static/list/normal_blacklist = list(
+		/obj/structure/overmap/ship,
+		/obj/structure/overmap/planet/empty,
+	)
+	return debug_mode ? debug_blacklist : normal_blacklist
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_current_celestial_object()
+	if(!validate_ship_binding())
+		return null
+	var/list/blacklisted_types = get_blacklisted_overmap_types()
 	if (ship_port)
 		if (ship_port.current_ship.close_overmap_objects)
 			for (var/obj/structure/overmap/object in ship_port.current_ship.close_overmap_objects)
@@ -231,112 +464,196 @@
 					return object
 	return null
 
+/**
+ * Every object a survey could target right now, ordered: objects sharing our
+ * overmap tile first (in close-list order), then storms within
+ * range_survey_distance tiles sorted nearest-first. Storms are the only at-range
+ * targets - the hazard IS the tile, so scanning one without flying into it is
+ * the intended counterplay - while landable content (planets, ruins, meteor
+ * fields) still requires being on the tile.
+ *
+ * Only the survey path uses this. The docking paths (refresh, checkLandingTurf)
+ * must keep using get_current_celestial_object(), or the docking camera could be
+ * aimed into the reservation of a field the ship isn't on.
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_survey_candidates()
+	if(!validate_ship_binding())
+		return list()
+	var/list/candidates = list()
+	if(!ship_port?.current_ship)
+		return candidates
+	// Everything sharing our tile - there can be more than one, and the old
+	// single-target flow only ever exposed the first
+	var/list/blacklisted_types = get_blacklisted_overmap_types()
+	for(var/obj/structure/overmap/object in ship_port.current_ship.close_overmap_objects)
+		if(!is_type_in_list(object, blacklisted_types))
+			candidates |= object
+	// Storms within the scan ring, nearest first. Same range()-over-turf sweep
+	// the sensor contact push uses (ship_sensors.dm)
+	var/turf/ship_turf = get_turf(ship_port.current_ship)
+	if(!ship_turf)
+		return candidates
+	var/list/storms_by_dist = list()
+	for(var/obj/structure/overmap/event/storm in range(range_survey_distance, ship_turf))
+		if(!istype(storm, /obj/structure/overmap/event/electric) && !istype(storm, /obj/structure/overmap/event/emp))
+			continue
+		storms_by_dist[storm] = get_dist(ship_turf, get_turf(storm))
+	sortTim(storms_by_dist, GLOBAL_PROC_REF(cmp_numeric_asc), associative = TRUE)
+	for(var/storm in storms_by_dist)
+		candidates |= storm
+	return candidates
+
+/**
+ * The object an unqualified survey click targets: the first on-tile object,
+ * else the nearest unsurveyed storm in scan range, else the nearest surveyed
+ * one. The UI's target list lets the player override this via target_ref.
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_survey_target()
+	var/list/candidates = get_survey_candidates()
+	if(!length(candidates))
+		return null
+	// The candidate list is ordered on-tile first, then storms nearest-first
+	var/obj/structure/overmap/first = candidates[1]
+	if(!is_survey_at_range(first))
+		return first
+	for(var/obj/structure/overmap/candidate as anything in candidates)
+		if(!is_object_surveyed(candidate))
+			return candidate
+	return first
+
+/// TRUE when the survey target sits on a neighbouring tile rather than sharing ours
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/is_survey_at_range(obj/structure/overmap/object)
+	if(!object || !ship_port?.current_ship)
+		return FALSE
+	return get_turf(object) != get_turf(ship_port.current_ship)
+
+/// Whether this object already has an entry in the survey records
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/is_object_surveyed(obj/structure/overmap/object)
+	var/celestial_type = data.get_related_celestial_list(object.type)
+	if(!celestial_type)
+		return FALSE
+	for(var/datum/surveyed_celestial_object/celestial in data.survey_objects_by_type[celestial_type])
+		if(celestial.ref_id == object.get_survey_identity())
+			return TRUE
+	return FALSE
+
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_survey_status(obj/structure/overmap/object)
 	if(!object || isnull(object))
 		return "no-orbit"
 	if (survey_in_progress)
 		return "in-progress"
 
-	var/already_surveyed = FALSE
-	var/current_celestial_type = data.get_related_celestial_list(object.type)
-	if(!current_celestial_type)
+	if(!data.get_related_celestial_list(object.type))
 		log_runtime("Not found [object.type]")
-	for(var/datum/surveyed_celestial_object/celestial in data.survey_objects_by_type[current_celestial_type])
-		if (celestial.ref_id == ref(object))
-			already_surveyed = TRUE
-	if(already_surveyed)
+	if(is_object_surveyed(object))
 		return "complete"
 	return "unsurveyed"
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/survey_celestial_object(mob/user)
-	var/current_object = get_current_celestial_object()
-	if(!current_object || isnull(current_object))
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/survey_celestial_object(mob/user, target_ref)
+	if(!validate_ship_binding())
+		return FALSE
+	sync_research_surveys()
+	if(survey_in_progress || !data)
+		return
+	var/obj/structure/overmap/current_object
+	if(target_ref)
+		// Resolve the client's pick against the live candidate list, never as a raw ref
+		for(var/obj/structure/overmap/candidate as anything in get_survey_candidates())
+			if(ref(candidate) == target_ref)
+				current_object = candidate
+				break
+	else
+		current_object = get_survey_target()
+	if(!current_object)
 		playsound(src, 'sound/machines/terminal/terminal_error.ogg', 100)
-		balloon_alert(user, "no surveyable celestial object found")
+		// Say WHY there is nothing to survey - a ship contact sharing the tile is
+		// the usual confusion ("why won't it survey this ship?")
+		var/has_ship_contact = FALSE
+		var/has_empty_space = FALSE
+		for(var/obj/structure/overmap/object in ship_port?.current_ship?.close_overmap_objects)
+			if(istype(object, /obj/structure/overmap/ship))
+				has_ship_contact = TRUE
+			else if(istype(object, /obj/structure/overmap/planet/empty))
+				has_empty_space = TRUE
+		if(has_ship_contact)
+			balloon_alert(user, "can't survey ships")
+			to_chat(user, span_warning("Vessels are not valid survey targets. The console only surveys celestial objects: planets, signals, storms, and stars."))
+		else if(has_empty_space)
+			balloon_alert(user, "empty space, nothing to survey")
+		else
+			balloon_alert(user, "no surveyable celestial object found")
+		return
+
+	if(is_object_surveyed(current_object))
+		balloon_alert(user, "already surveyed")
 		return
 
 	soundloop.start()
 	survey_in_progress = TRUE
-
-	// Register to the ship move signal and cancel survey if it's triggered
-	RegisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_MOVED, PROC_REF(cancel_survey))
+	current_survey_target = current_object
 
 	if(istype(current_object, /obj/structure/overmap/planet))
 		var/obj/structure/overmap/planet/planet = current_object
-		// Check if planet is loaded
-		var/loaded = planet.loaded
-		if (!loaded)
-			RegisterSignal(planet, COMSIG_VOIDCREW_PLANET_LOADED, PROC_REF(complete_survey))
+		// Unloaded planets have no data to survey yet - load first, then run the survey
+		if (!planet.loaded)
+			RegisterSignal(planet, COMSIG_VOIDCREW_PLANET_LOADED, PROC_REF(on_survey_planet_loaded))
 			INVOKE_ASYNC(planet, TYPE_PROC_REF(/obj/structure/overmap/planet, load_level))
 			return
 
 	survey_timer = addtimer(CALLBACK(src, PROC_REF(complete_survey), current_object), (debug_mode ? 1 : 60) SECONDS, TIMER_STOPPABLE)
 
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/on_survey_planet_loaded(datum/source)
+	SIGNAL_HANDLER
+	UnregisterSignal(source, COMSIG_VOIDCREW_PLANET_LOADED)
+	if(!survey_in_progress || current_survey_target != source)
+		return
+	// Hop out of signal context via timer so completion shares the normal cancel path
+	survey_timer = addtimer(CALLBACK(src, PROC_REF(complete_survey), source), 1, TIMER_STOPPABLE)
+
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/complete_survey(obj/structure/overmap/object)
+	if(!validate_ship_binding())
+		return FALSE
+	sync_research_surveys()
+	// A stale callback must neither pay again nor cancel a newer survey.
+	if(!survey_in_progress || current_survey_target != object)
+		return
 	soundloop.stop()
-	if(istype(object, /obj/structure/overmap/planet))
-		UnregisterSignal(object, COMSIG_VOIDCREW_PLANET_LOADED)
-	var/list/values = get_survey_value(object)
-	banked_points += values["points"]
-	banked_cash += values["cash"]
-	data.update_survey_data(object)
 	survey_in_progress = FALSE
-	update_static_data(ui_user)
+	survey_timer = null
+	current_survey_target = null
+	if(QDELETED(object) || !data || !(object in get_survey_candidates()) || is_object_surveyed(object))
+		return
+	var/list/values = get_survey_value(object)
+	if(values)
+		banked_points += values["points"]
+		banked_cash += values["cash"]
+	data.update_survey_data(object)
+	sync_research_surveys()
+	object.surveyed = TRUE
+	update_static_data_for_all_viewers()
 
 	// Send signal to ship for mission tracking
 	var/celestial_type = data.get_related_celestial_list(object.type)
 	if(ship_port?.current_ship && celestial_type)
 		SEND_SIGNAL(ship_port.current_ship, COMSIG_VOIDCREW_SURVEY_COMPLETED, celestial_type)
-	return
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_survey_value(obj/structure/overmap/object)
 	if(!object)
 		return
 
-	var/list/point_values = list(
-		nebula = list(
-			points = 50,
-			cash = 50
-		),
-		meteor = list(
-			points = 100,
-			cash = 100
-		),
-		electric = list(
-			points = 250,
-			cash = 250
-		),
-		emp = list(
-			points = 400,
-			cash = 400
-		),
-		planet = list(
-			points = 500,
-			cash = 500
-		),
-		star = list(
-			points = 1000,
-			cash = 1000
-		),
-		space_ruin = list(
-			points = 300,
-			cash = 300
-		),
-	)
-
 	var/point_list = list()
 
-	var/type_split = splittext("[object.type]", "/")
-	var/celestial_object_type = type_split[length(type_split)]
+	// The payout lives on the overmap object (survey_value, see _overmap.dm) rather than
+	// in a table keyed by type name here - almost nothing spawns as its family's base
+	// type, so storm severities, planet terrains, fixed-gas nebulas and star classes all
+	// used to fall through to nothing. 0 is anything that isn't a celestial body.
+	var/points = object.survey_value
+	var/cash = object.survey_value
 
-	// Check if the celestial type is invalid
-	if(!celestial_object_type || isnull(celestial_object_type) || !(celestial_object_type in point_values))
+	if(!points)
 		point_list["cash"] = 0
 		point_list["points"] = 0
 		return point_list
-
-	var/points = point_values[celestial_object_type]["points"]
-	var/cash = point_values[celestial_object_type]["cash"]
 
 	// Extra rewards for being the first to survey an object
 	if (!object.surveyed)
@@ -353,292 +670,90 @@
 		cash *= 1.2
 		points *= 1.2
 
+	// Scanning a storm from a neighbouring tile is safe, so it pays less
+	if(is_survey_at_range(object))
+		cash *= range_survey_value_mult
+		points *= range_survey_value_mult
+
 	point_list["cash"] = cash
 	point_list["points"] = points
 	return point_list
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/cancel_survey()
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/cancel_survey(datum/source)
 	SIGNAL_HANDLER
+	if(source && !validate_ship_binding())
+		return
 
-	var/obj/structure/overmap/object = get_current_celestial_object()
 	if(survey_in_progress)
-		UnregisterSignal(object, COMSIG_VOIDCREW_PLANET_LOADED)
-		deltimer(survey_timer)
+		// Unregister from the object the survey actually started on - the ship has
+		// already moved, so get_current_celestial_object() may be null or different
+		if(istype(current_survey_target, /obj/structure/overmap/planet))
+			UnregisterSignal(current_survey_target, COMSIG_VOIDCREW_PLANET_LOADED)
+		if(survey_timer)
+			deltimer(survey_timer)
+			survey_timer = null
 		soundloop.stop()
 		playsound(src, 'sound/machines/terminal/terminal_error.ogg', 50)
 		survey_in_progress = FALSE
+		current_survey_target = null
 	remove_old_ports(my_port)
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/save_survey_data()
-	if(!survey_disk)
+/// Copies every surveyed celestial from one survey datum into another, matching entries by ref_id
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/transfer_survey_data(datum/survey_research/source, datum/survey_research/destination)
+	if(!source || !destination)
 		return
 
-	if(!data)
+	for(var/type_key in source.survey_objects_by_type)
+		var/list/source_list = source.survey_objects_by_type[type_key]
+		var/list/destination_list = destination.survey_objects_by_type[type_key]
+		for(var/datum/surveyed_celestial_object/celestial_data as anything in source_list)
+			var/datum/surveyed_celestial_object/celestial
+			for(var/datum/surveyed_celestial_object/existing_celestial as anything in destination_list)
+				if(existing_celestial.ref_id == celestial_data.ref_id)
+					celestial = existing_celestial
+					break
+			if(!celestial)
+				celestial = new celestial_data.type
+			celestial_data.copy(celestial)
+			destination_list |= celestial
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/save_survey_data(mob/user)
+	sync_research_surveys()
+	if(!validate_survey_disk() || !data)
 		return
 
-	for(var/datum/surveyed_celestial_object/nebula/celestial_data in data.survey_objects_by_type["nebulas"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/nebula/celestial
+	transfer_survey_data(data, survey_disk.data)
+	playsound(src, 'sound/machines/terminal/terminal_alert.ogg', 40)
+	if(user)
+		balloon_alert(user, "data saved to disk")
 
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/nebula/existing_celestial in survey_disk.data.survey_objects_by_type["nebulas"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["nebulas"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/asteroid/celestial_data in data.survey_objects_by_type["asteroids"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/asteroid/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/asteroid/existing_celestial in survey_disk.data.survey_objects_by_type["asteroids"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["asteroids"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/electric_storm/celestial_data in data.survey_objects_by_type["electric_storms"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/electric_storm/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/electric_storm/existing_celestial in survey_disk.data.survey_objects_by_type["electric_storms"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["electric_storms"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/emp_storm/celestial_data in data.survey_objects_by_type["emp_storms"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/emp_storm/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/emp_storm/existing_celestial in survey_disk.data.survey_objects_by_type["emp_storms"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["emp_storms"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/planet/celestial_data in data.survey_objects_by_type["planets"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/planet/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/planet/existing_celestial in survey_disk.data.survey_objects_by_type["planets"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["planets"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/star/celestial_data in data.survey_objects_by_type["stars"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/star/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/star/existing_celestial in survey_disk.data.survey_objects_by_type["stars"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["stars"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/space_ruin/celestial_data in data.survey_objects_by_type["space_ruins"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/space_ruin/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/space_ruin/existing_celestial in survey_disk.data.survey_objects_by_type["space_ruins"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our survey console's celestial to our disk
-		celestial_data.copy(celestial)
-		survey_disk.data.survey_objects_by_type["space_ruins"] |= celestial
-
-	playsound(src, "sound/machines/terminal_alert.ogg", 40)
-	balloon_alert(ui_user, "data saved to disk")
-
-
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/download_survey_data()
-	if(!survey_disk)
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/download_survey_data(mob/user)
+	validate_ship_binding()
+	if(!validate_survey_disk() || !data)
 		return
 
-	for(var/datum/surveyed_celestial_object/nebula/celestial_data in survey_disk.data.survey_objects_by_type["nebulas"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/nebula/celestial
+	transfer_survey_data(survey_disk.data, data)
+	sync_research_surveys()
+	update_static_data_for_all_viewers()
+	playsound(src, 'sound/machines/high_tech_confirm.ogg', 40)
+	if(user)
+		balloon_alert(user, "data downloaded from disk")
 
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/nebula/existing_celestial in data.survey_objects_by_type["nebulas"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["nebulas"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/asteroid/celestial_data in survey_disk.data.survey_objects_by_type["asteroids"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/asteroid/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/asteroid/existing_celestial in data.survey_objects_by_type["asteroids"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["asteroids"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/electric_storm/celestial_data in survey_disk.data.survey_objects_by_type["electric_storms"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/electric_storm/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/electric_storm/existing_celestial in data.survey_objects_by_type["electric_storms"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["electric_storms"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/emp_storm/celestial_data in survey_disk.data.survey_objects_by_type["emp_storms"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/emp_storm/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/emp_storm/existing_celestial in data.survey_objects_by_type["emp_storms"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["emp_storms"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/planet/celestial_data in survey_disk.data.survey_objects_by_type["planets"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/planet/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/planet/existing_celestial in data.survey_objects_by_type["planets"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["planets"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/star/celestial_data in survey_disk.data.survey_objects_by_type["stars"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/star/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/star/existing_celestial in data.survey_objects_by_type["stars"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["stars"] |= celestial
-
-	for(var/datum/surveyed_celestial_object/space_ruin/celestial_data in survey_disk.data.survey_objects_by_type["space_ruins"])
-		// Create a placeholder celestial var
-		var/datum/surveyed_celestial_object/space_ruin/celestial
-
-		// Check to see if our celestial is already in our disk's survey data
-		for(var/datum/surveyed_celestial_object/space_ruin/existing_celestial in data.survey_objects_by_type["space_ruins"])
-			if(existing_celestial.ref_id == celestial_data.ref_id || existing_celestial == celestial_data)
-				celestial = existing_celestial
-
-		// If it isn't, instantiate it
-		if(!celestial)
-			celestial = new()
-
-		// Copy data from our disk to our survey console
-		celestial_data.copy(celestial)
-		data.survey_objects_by_type["space_ruins"] |= celestial
-
-	update_static_data(ui_user)
-	playsound(src, "sound/machines/high_tech_confirm.ogg", 40)
-	balloon_alert(ui_user, "data downloaded from disk")
-
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/eject_disk()
-	if(survey_disk)
-		survey_disk.forceMove(get_turf(src))
-		survey_disk = null
-		playsound(src, "sound/machines/eject.ogg", 40)
-		balloon_alert(ui_user, "disk ejected")
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/eject_disk(mob/user)
+	if(!validate_survey_disk())
+		return
+	survey_disk.forceMove(get_turf(src))
+	survey_disk = null
+	playsound(src, 'sound/machines/eject.ogg', 40)
+	if(user)
+		balloon_alert(user, "disk ejected")
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/activate_survey_map(mob/user)
+	if(!can_use_survey_map())
+		return FALSE
 	refresh()
 	if(length(ship_port.current_ship.close_overmap_objects) == 0)
 		balloon_alert(user, "ship is not in orbit!")
-		return
-	if(.)
 		return
 	if(!can_use(user))
 		return
@@ -660,8 +775,9 @@
 
 	give_eye_control(L)
 	eyeobj.setLoc(camera_location)
-	RegisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_DOCKED, PROC_REF(docked))
-	RegisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_UNDOCKED, PROC_REF(undocked))
+	// override - opening the map again before docking/undocking re-registers these
+	RegisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_DOCKED, PROC_REF(docked), override = TRUE)
+	RegisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_UNDOCKED, PROC_REF(undocked), override = TRUE)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/print_survey_notes()
 	playsound(src, 'sound/items/taperecorder/taperecorder_print.ogg', 60)
@@ -669,47 +785,32 @@
 	banked_points = 0
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/cash_out()
-	if(banked_cash == 0)
+	if(banked_cash <= 0)
 		return
 
-	var remaining_amount = banked_cash
+	var/remaining_amount = banked_cash
 	banked_cash = 0
 
-	var/list/bill_types = list(
-		/obj/item/stack/spacecash/c10000,
-		/obj/item/stack/spacecash/c1000,
-		/obj/item/stack/spacecash/c500,
-		/obj/item/stack/spacecash/c200,
-		/obj/item/stack/spacecash/c100,
-		/obj/item/stack/spacecash/c50,
-		/obj/item/stack/spacecash/c20,
-		/obj/item/stack/spacecash/c10,
-		/obj/item/stack/spacecash/c1
-	)
-	var/list/bill_values = list(
-		10000,
-		1000,
-		500,
-		200,
-		100,
-		50,
-		20,
-		10,
-		1
+	var/static/list/bill_denominations = list(
+		/obj/item/stack/spacecash/c10000 = 10000,
+		/obj/item/stack/spacecash/c1000 = 1000,
+		/obj/item/stack/spacecash/c500 = 500,
+		/obj/item/stack/spacecash/c200 = 200,
+		/obj/item/stack/spacecash/c100 = 100,
+		/obj/item/stack/spacecash/c50 = 50,
+		/obj/item/stack/spacecash/c20 = 20,
+		/obj/item/stack/spacecash/c10 = 10,
+		/obj/item/stack/spacecash/c1 = 1,
 	)
 
 	playsound(src, 'sound/items/taperecorder/taperecorder_print.ogg', 60)
-	var/obj/item/stack/spacecash/bill
-	var/bill_value
+	playsound(src, 'sound/items/handling/paper_drop.ogg', 60)
 
-	for (var/i = 1, i <= bill_types.len, i++)
-		bill_value = bill_values[i]
-		while (remaining_amount >= bill_value)
+	for(var/bill_type in bill_denominations)
+		var/bill_value = bill_denominations[bill_type]
+		while(remaining_amount >= bill_value)
 			remaining_amount -= bill_value
-			bill = bill_types[i]
-			playsound(src, 'sound/items/handling/paper_drop.ogg', 60)
-			new bill(src.loc)
-			sleep(1 SECONDS)
+			new bill_type(loc)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/checkLandingTurf(turf/T, list/overlappers)
 	. = ..()
@@ -717,6 +818,23 @@
 	if(!T)
 		return SHUTTLE_DOCKER_BLOCKED
 
+	// Reserved z-levels stay off-limits outright. There used to be an exception for the
+	// orbited space ruin's own reservation; ruins and asteroid fields are map-zone tenants
+	// now and never sit on a ZTRAIT_RESERVED level, so nothing a player can legally land
+	// on is behind this gate any more. Their own co-tenant scoping is the footprint test
+	// in checkLandingSpot().
+	if(SSmapping.level_has_any_trait(T.z, locked_traits))
+		return SHUTTLE_DOCKER_BLOCKED
+
+	// The gate above evaporated for packed sites - lattice levels carry ZTRAIT_MINING, none
+	// of locked_traits - and checkLandingSpot()'s footprint test only judges the EYE's own
+	// tile, while this proc is called for every tile of the projected berth. Without this
+	// the only thing between a hull and the neighbour's slot is /area/misc/cordon failing
+	// the whitelisted_areas test below, i.e. the cordon's area type. A site with no
+	// footprint is unscoped and behaves exactly as it did before packing.
+	var/datum/map_footprint/site_footprint = get_current_site_footprint()
+	if(site_footprint && !site_footprint.contains_turf(T))
+		return SHUTTLE_DOCKER_BLOCKED
 
 	var/allowed_mob = TRUE
 	for(var/mob in T.contents)
@@ -737,12 +855,65 @@
 		return SHUTTLE_DOCKER_BLOCKED_BY_AREA
 
 
+/**
+ * The slot the orbited site occupies on its z-level, or null when it has none.
+ *
+ * This replaced turf_in_current_ruin_reservation(), which let the custom-docking gate make
+ * an exception for turfs inside the orbited space ruin's turf reservation. Ruins and
+ * asteroid fields are map-zone tenants now, so none of them sits on a ZTRAIT_RESERVED
+ * level and the exception has nothing left to grant - but their level IS shared with up to
+ * three co-tenants, separated by a strip of cordon the camera eye passes straight through,
+ * which is what this scopes. See /datum/map_footprint.
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/get_current_site_footprint()
+	var/obj/structure/overmap/celestial = get_current_celestial_object()
+	return celestial?.get_interior_footprint()
+
+/**
+ * Keeps the survey eye off a co-tenant's ground.
+ *
+ * checkLandingSpot() refuses to DESIGNATE outside the orbited site, but the eye itself was
+ * never bounded - and with the research-tier mapping upgrades this console grants (mob_sight,
+ * obj_sight, see_hidden) an operator who scrolls across the cordon reads exactly who is
+ * aboard next door. A five-turf gutter of /turf/cordon stops air, sight, bullets and
+ * movement; it does not stop a camera eye.
+ *
+ * The rule is "never somebody else's", not "only mine": inside our own footprint is the fast
+ * path, and anything the site resolver cannot place - the gutter, raw space, a site with
+ * neither footprint nor reservation - stays reachable, so no console can be wedged by a
+ * lookup that comes back empty. Overrides the TRUE-by-default hook on the base console type,
+ * so upstream navigation, syndicate, whiteship and caravan consoles keep their full reach.
+ */
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/eye_may_enter(turf/destination)
+	if(!can_use_survey_map())
+		return FALSE
+	if(!destination)
+		return FALSE
+	var/obj/structure/overmap/celestial = get_current_celestial_object()
+	if(isnull(celestial))
+		return TRUE
+	var/datum/map_footprint/site_footprint = get_current_site_footprint()
+	if(site_footprint?.contains_turf(destination))
+		return TRUE
+	var/obj/structure/overmap/owner = SSovermap_zones?.get_overmap_object_for_turf(destination)
+	return isnull(owner) || owner == celestial
+
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/checkLandingSpot()
+	if(!can_use_survey_map())
+		return SHUTTLE_DOCKER_BLOCKED
 	var/mob/eye/camera/remote/shuttle_docker/the_eye = eyeobj
 	var/turf/eyeturf = get_turf(the_eye)
 	if(!eyeturf)
 		return SHUTTLE_DOCKER_BLOCKED
-	if(!eyeturf.z || SSmapping.level_has_any_trait(eyeturf.z, locked_traits))
+	if(!eyeturf.z)
+		return SHUTTLE_DOCKER_BLOCKED
+	if(SSmapping.level_has_any_trait(eyeturf.z, locked_traits))
+		return SHUTTLE_DOCKER_BLOCKED
+	// The designated landing site has to be on the object we are actually orbiting, not on
+	// whoever is sharing its z-level. A site with no footprint is unscoped and keeps the
+	// behaviour it had before packing.
+	var/datum/map_footprint/site_footprint = get_current_site_footprint()
+	if(site_footprint && !site_footprint.contains_turf(eyeturf))
 		return SHUTTLE_DOCKER_BLOCKED
 
 	. = SHUTTLE_DOCKER_LANDING_CLEAR
@@ -772,6 +943,8 @@
 				. = SHUTTLE_DOCKER_BLOCKED
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/placeLandingSpot()
+	if(!can_use_survey_map())
+		return FALSE
 	if(designating_target_loc || !current_user)
 		return
 
@@ -912,13 +1085,14 @@
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/remove_old_ports(port_id)
 	jump_to_ports = list()
-	ship_port.port_destinations = null
+	if(ship_port && ship_port.port_destinations == my_port)
+		ship_port.port_destinations = null
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/add_jumpable_port(port_id)
 	jump_to_ports = list(port_id)
 	jump_to_ports[port_id] = TRUE
 
-/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/set_action_scaling(var/mob/living/user, scaling_integer)
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/set_action_scaling(mob/living/user, scaling_integer)
 	if(!user)
 		return
 	if(!scaling_integer)
@@ -950,6 +1124,8 @@
 	user.hud_used.toggle_palette.scale_to(scaling_integer, scaling_integer)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/give_eye_control(mob/user)
+	if(!can_use_survey_map())
+		return FALSE
 	..()
 	if(!QDELETED(user) && user.client)
 		var/mob/eye/camera/remote/shuttle_docker/the_eye = eyeobj
@@ -980,39 +1156,120 @@
 		user.client.images -= to_remove
 		user.client.view_size.resetToDefault()
 		set_action_scaling(user, 1)
-		QDEL_NULL(eyeobj)
+	// Always release the operator and eye, even if the user disconnected mid-control.
+	current_user = null
+	QDEL_NULL(eyeobj)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/docked()
 	SIGNAL_HANDLER
+	if(!validate_ship_binding())
+		return
 	UnregisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_DOCKED)
+	// No custom port means we docked somewhere else (outpost, another ship) - nothing to light
+	if(!my_port)
+		return
 	setup_lighting()
-	remove_eye_control(current_user)
+	if(current_user)
+		remove_eye_control(current_user)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/undocked()
 	SIGNAL_HANDLER
+	if(!validate_ship_binding())
+		return
 	UnregisterSignal(ship_port.current_ship, COMSIG_VOIDCREW_SHIP_UNDOCKED)
 	undo_lighting()
 	remove_old_ports(my_port)
-	my_port.unregister()
-	qdel(my_port)
-	my_port = null
+	if(my_port)
+		my_port.unregister()
+		// Forced, or docking_port/Destroy answers with QDEL_HINT_LETMELIVE and the
+		// just-unregistered port lives on as an orphan
+		qdel(my_port, force = TRUE)
+		my_port = null
 	var/mob/eye/camera/remote/shuttle_docker/the_eye = eyeobj
-	LAZYCLEARLIST(the_eye.placed_images)
+	if(the_eye)
+		LAZYCLEARLIST(the_eye.placed_images)
 
 /obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/refresh(mob/user)
+	if(!can_use_survey_map())
+		return FALSE
 	var/o = get_current_celestial_object()
 	if(istype(o, /obj/structure/overmap/planet))
 		var/obj/structure/overmap/planet/planet = o
 		if (!planet || isnull(planet))
 			remove_old_ports()
 			return
-		// Ensure planet has docking ports created
-		planet.load_level()
+		// Ensure planet has docking ports created. Refreshing a camera view is no reason
+		// to hold the worldgen queue, so if something else is mid-build we say so and let
+		// the player try again rather than freezing the console until it finishes.
+		planet.load_level(queue_timeout = WORLDGEN_QUEUE_NO_WAIT)
 		if(!planet.mapzone)
+			to_chat(user, span_warning("Survey systems are busy resolving another location. Try again in a moment."))
 			return
 		// Use the reserve dock location for camera placement
 		if(planet.reserve_dock)
 			docking_location = get_turf(planet.reserve_dock)
 		else
-			var/datum/space_level/lvl = planet.mapzone.z_levels[1]
-			docking_location = locate(1, 1, lvl.z_value)
+			// The middle of the planet's own slot. (1,1) is the cordon band outside every
+			// tenant's footprint, so the camera opened onto ground the console then
+			// refuses to designate - and on a packed level it is not even this planet's.
+			var/turf/planet_center = planet.footprint?.get_center_turf()
+			if(planet_center)
+				docking_location = planet_center
+			else
+				var/datum/space_level/lvl = planet.mapzone.z_levels[1]
+				docking_location = locate(1, 1, lvl.z_value)
+	else if(istype(o, /obj/structure/overmap/space_ruin))
+		var/obj/structure/overmap/space_ruin/ruin = o
+		// Ensure the ruin's map slot and docking ports exist. Same rule as the planet
+		// branch above: ruin loads queue now, and a camera refresh is no reason to hold
+		// this console open behind somebody else's survey - take the queue only if free.
+		ruin.load_level(queue_timeout = WORLDGEN_QUEUE_NO_WAIT)
+		if(!ruin.mapzone)
+			if(user)
+				to_chat(user, span_warning("Survey systems are busy resolving another location. Try again in a moment."))
+			remove_old_ports()
+			docking_location = null
+			return
+		// Use the reserve dock location for camera placement
+		if(ruin.reserve_dock)
+			docking_location = get_turf(ruin.reserve_dock)
+		else
+			docking_location = ruin.footprint?.get_center_turf()
+	else if(istype(o, /obj/structure/overmap/event/meteor))
+		var/obj/structure/overmap/event/meteor/field = o
+		// Ensure the field's map slot and docking ports exist - same no-wait rule as above
+		field.load_level(queue_timeout = WORLDGEN_QUEUE_NO_WAIT)
+		if(!field.mapzone)
+			if(user)
+				to_chat(user, span_warning("Survey systems are busy resolving another location. Try again in a moment."))
+			remove_old_ports()
+			docking_location = null
+			return
+		// Use the reserve dock location for camera placement
+		if(field.reserve_dock)
+			docking_location = get_turf(field.reserve_dock)
+		else
+			docking_location = field.footprint?.get_center_turf()
+	else
+		// No dockable celestial in orbit - don't reuse a stale location from a previous target
+		docking_location = null
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/canDesignateTarget()
+	return can_use_survey_map() && ..()
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/rotateLandingSpot()
+	if(!can_use_survey_map())
+		return FALSE
+	return ..()
+
+/// A disk pulled out by other machinery must not remain writable through an old UI.
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/proc/validate_survey_disk()
+	if(QDELETED(survey_disk) || survey_disk.loc != src)
+		survey_disk = null
+		return FALSE
+	return TRUE
+
+/obj/machinery/computer/camera_advanced/shuttle_docker/survey/process()
+	if(current_user && !can_use_survey_map())
+		return PROCESS_KILL
+	return ..()

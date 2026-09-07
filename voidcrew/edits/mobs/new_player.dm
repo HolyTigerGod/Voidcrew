@@ -1,3 +1,52 @@
+/**
+ * Lobby button that opens the server wiki in the player's browser.
+ *
+ * Sits at the left end of the bottom button row, next to the poll button. New players
+ * spend their first minutes on this screen, so it is the one place a wiki link is
+ * guaranteed to be seen before they pick a ship.
+ */
+/atom/movable/screen/lobby/button/bottom/wiki
+	name = "Open the Wiki"
+	icon_state = "wiki"
+	base_icon_state = "wiki"
+	screen_loc = "TOP:-122,CENTER:-54"
+
+/atom/movable/screen/lobby/button/bottom/wiki/SlowInit()
+	. = ..()
+	//No URL configured means there is nothing to open - grey the button out instead of
+	//handing people a button that only ever errors at them.
+	if(!CONFIG_GET(string/wikiurl))
+		set_button_status(FALSE)
+
+/atom/movable/screen/lobby/button/bottom/wiki/Click(location, control, params)
+	. = ..()
+	if(!.)
+		return
+	usr.client?.wiki()
+
+/**
+ * Fullscreen static starfield behind the lobby menu, drawn with the overmap's own
+ * turf sprite so the lobby keeps its "floating over the star chart" look.
+ *
+ * The lobby used to sit on a live overmap tile, letting people watch real ships and
+ * planets from the title menu (and metagame off it). The lobby anchor now parks over
+ * empty space far away from the overmap (see SSovermap.relocate_lobby()); this
+ * backdrop supplies the view, with no live tactical information behind it.
+ *
+ * Instantiated automatically by /datum/hud/new_player/New alongside every other
+ * /atom/movable/screen/lobby subtype. always_shown so it does not slide off-screen
+ * with the buttons when the lobby menu is collapsed.
+ */
+/atom/movable/screen/lobby/starfield
+	name = "space"
+	icon = 'voidcrew/modules/overmap/icons/turf/overmap.dmi'
+	icon_state = "overmap"
+	screen_loc = "WEST,SOUTH to EAST,NORTH"
+	// Below every lobby element AND below cinematics (CINEMATIC_LAYER), so a round-end
+	// cinematic still draws over the backdrop for anyone watching from the lobby
+	layer = CINEMATIC_LAYER - 1
+	always_shown = TRUE
+
 /datum/latejoin_menu/ui_interact(mob/dead/new_player/user, datum/tgui/ui)
 	user.select_ship() //override ui_interact and send to our latejoin menu instead
 	return TRUE
@@ -21,6 +70,18 @@
 		var/memo_accept = tgui_alert(src, "Current ship memo: [ship.memo]", "[ship.name] Memo", list("OK", "Cancel"))
 		if(memo_accept != "OK")
 			return select_ship() // Send them back to ship selection
+
+	// Password gate. Saved clearance lasts until a password change or join access reset.
+	// encode = FALSE: captains set the password through raw TGUI params, so the attempt
+	// must stay raw too or any password with an HTML-special character never matches.
+	if(!ship.is_password_cleared(ckey))
+		var/attempt = tgui_input_text(src, "This ship is password-locked by its crew. Enter the join password.", "[ship.name] - Join Password", max_length = SHIP_JOIN_PASSWORD_MAX_LEN, encode = FALSE, timeout = 60 SECONDS)
+		if(isnull(attempt) || QDELETED(ship))
+			return select_ship() // Cancelled, timed out, or the ship died mid-prompt
+		if(!ship.check_join_password(attempt))
+			to_chat(src, span_warning("Incorrect join password for [ship.name]."))
+			return select_ship()
+		ship.password_cleared_ckeys[ckey] = TRUE
 
 	// Build job choices
 	var/list/job_choices = list()
@@ -59,27 +120,8 @@
 /mob/dead/new_player/var/spawning_ship = FALSE
 
 /**
- * Callback when player selects a ship from the catalog
- * The catalog has already handled unlocking/part deduction
- */
-/mob/dead/new_player/proc/on_ship_catalog_selection(datum/map_template/shuttle/voidcrew/template)
-	if(!template)
-		return select_ship() // Cancelled, return to menu
-
-	// Check if this ship has upgrade slots OR themes - if so, open upgrade selector
-	// (Theme selection happens in the upgrade selector UI)
-	if((template.has_upgrade_slots && length(template.upgrade_slot_ids)) || length(template.available_themes))
-		var/datum/callback/cb = CALLBACK(src, PROC_REF(on_upgrades_confirmed))
-		var/datum/ship_upgrade_selector/selector = new(src, template, cb)
-		selector.ui_interact(src)
-		return
-
-	// No upgrades or themes, spawn directly with default theme if available
-	var/datum/ship_theme/default_theme = get_default_theme_for_ship(template.type)
-	spawn_ship_with_upgrades(template, list(), default_theme)
-
-/**
- * Callback when player confirms upgrade selections
+ * Callback when player confirms their hull, theme and upgrade selections.
+ * The selector has already handled the hull unlock and part deduction.
  */
 /mob/dead/new_player/proc/on_upgrades_confirmed(datum/map_template/shuttle/voidcrew/template, list/upgrade_selections, datum/ship_theme/selected_theme)
 	if(!template)
@@ -104,10 +146,64 @@
 	var/obj/structure/overmap/ship/target = SSshuttle.create_ship(template, upgrade_selections, selected_theme)
 	if(!istype(target))
 		spawning_ship = FALSE
-		to_chat(src, span_danger("There was an error loading the ship. Please contact admins!"))
+		// A refusal at the map-volume ceiling is transient - transit space frees up in
+		// seconds as ships move. Say so instead of sending the buyer to the admins for
+		// a condition that fixes itself.
+		if(SSmapping.at_z_level_ceiling())
+			to_chat(src, span_warning("The shipyard is congested right now - hull assembly space frees up as ships move. Try again in a minute."))
+		else
+			to_chat(src, span_danger("There was an error loading the ship. Please contact admins!"))
 		return select_ship()
 
 	SSblackbox.record_feedback("tally", "ship_purchased", 1, template.name)
+
+	// Hulls spawn open; the captain locks theirs from Ship Management if they want one.
+	// The buyer is cleared anyway so a password set before they seat themselves (or
+	// after a failed spawn) can never lock them out of the hull they paid for.
+	target.password_cleared_ckeys[ckey] = TRUE
+	to_chat(src, span_notice("Your ship is open for anyone to join. To lock it, set a join password from Ship Management once aboard."))
+
+	if(!AttemptSpawnOnShip(target.job_slots[1], target))
+		to_chat(src, span_danger("Ship spawned, but you were unable to be spawned. You can likely try to spawn in the ship through joining normally, but if not, please contact an admin."))
+
+/**
+ * Spawns a free hull for a player the fleet has no room for, and seats them on it as
+ * its officer.
+ *
+ * This is the same roll the roundstart fleet uses - a real modular hull with a theme
+ * and a module in every slot, not a Pill - because someone who joins after the fleet
+ * filled up or got destroyed should not be flying something worse than the round
+ * started on. Nobody pays for it: on a fresh server nobody has the parts to, and a
+ * player with no seat and no hull has no round.
+ *
+ * The gate is re-checked here rather than trusted from ui_act, since the fleet can
+ * open up in the time it takes someone to read the menu.
+ */
+/mob/dead/new_player/proc/requisition_free_hull()
+	if(!SSticker?.IsRoundInProgress())
+		to_chat(src, span_danger("The round is either not ready, or has already finished..."))
+		return
+
+	if(!can_requisition_hull(src))
+		to_chat(src, span_warning("A position opened up in the fleet while you were deciding. Join a crew instead."))
+		return select_ship()
+
+	// Prevent double-click spawning
+	if(spawning_ship)
+		to_chat(src, span_warning("Your ship is already being prepared. Please wait..."))
+		return
+	spawning_ship = TRUE
+
+	to_chat(src, span_notice("No ship in the fleet has room for you. A hull is being prepared - please be patient!"))
+	var/obj/structure/overmap/ship/target = SSovermap.spawn_free_hull(track_as_initial = FALSE)
+	if(!istype(target))
+		spawning_ship = FALSE
+		to_chat(src, span_danger("There was an error loading the ship. Please contact admins!"))
+		return select_ship()
+
+	SSblackbox.record_feedback("tally", "ship_requisitioned", 1, target.source_template?.name || "[target.type]")
+	log_shuttle("[key_name(src)] requisitioned a free hull: [target.name]")
+
 	if(!AttemptSpawnOnShip(target.job_slots[1], target))
 		to_chat(src, span_danger("Ship spawned, but you were unable to be spawned. You can likely try to spawn in the ship through joining normally, but if not, please contact an admin."))
 
@@ -126,6 +222,12 @@
 		to_chat(usr, span_danger("There are no more [job.title] positions available on this ship!"))
 		return FALSE
 
+	// Every UI path prompts for this upstream; the check here covers the window where a
+	// captain sets a password between the menu opening and the spawn going through.
+	if(!joined_ship.is_password_cleared(ckey))
+		to_chat(usr, span_warning("[joined_ship.name] is password-locked by its crew."))
+		return FALSE
+
 	//Removes a job slot
 	joined_ship.job_slots[job]--
 
@@ -134,6 +236,8 @@
 	SSticker.queue_delay = 4
 
 	if(!SSjob.assign_role(src, job, TRUE))
+		//Give back the job slot we took, or it leaks whenever assignment fails (job ban, playtime, etc.)
+		joined_ship.job_slots[job]++
 		tgui_alert(usr, "There was an unexpected error putting you into your requested job. If you cannot join with any job, you should contact an admin.")
 		return FALSE
 
@@ -145,24 +249,8 @@
 		CRASH("Failed to create a character for latejoin.")
 	transfer_character()
 
-	// Check for custom slot swap on this job (only applies if the spawning player made the swap)
-	var/list/custom_slot_swap = null
-	if(joined_ship.shuttle.cryo_console && character.client?.ckey)
-		custom_slot_swap = joined_ship.shuttle.cryo_console.get_custom_slot_for_job(job)
-		// Only use the swap if this player made it
-		if(custom_slot_swap && custom_slot_swap["ckey"] != character.client.ckey)
-			custom_slot_swap = null
-
 	SSjob.equip_rank(character, job, character.client)
 	job.after_latejoin_spawn(character)
-
-	// Apply custom slot loadout if swapped by this player
-	if(custom_slot_swap)
-		var/slot_index = custom_slot_swap["slot_index"]
-		var/list/custom_loadout = GLOB.custom_slot_manager.get_slot_loadout(character.client.ckey, slot_index)
-		if(length(custom_loadout))
-			apply_custom_slot_loadout(character, custom_loadout)
-			to_chat(character, span_notice("Your custom slot '[custom_slot_swap["slot_name"]]' loadout has been applied."))
 
 	SSticker.minds += character.mind
 	character.client.init_verbs() // init verbs for the late join
@@ -174,6 +262,11 @@
 		joined_ship.manifest_inject(humanc, job)
 		GLOB.manifest.inject(humanc)
 
+		// Bind their headset's ship channel to this ship so crew comms follow them off-ship
+		var/obj/item/radio/spawned_headset = humanc.ears
+		if(istype(spawned_headset))
+			spawned_headset.bind_comms_to_ship(joined_ship.shuttle)
+
 		humanc.increment_scar_slot()
 		humanc.load_persistent_scars()
 
@@ -181,6 +274,8 @@
 			give_madness(humanc, GLOB.curse_of_madness_triggered)
 
 	GLOB.joined_player_list += character.ckey
+	// They have a berth now, so whatever they were waiting on elsewhere lapses
+	clear_crew_applications_for_ckey(character.ckey)
 
 	if((job.job_flags & JOB_ASSIGN_QUIRKS) && humanc && CONFIG_GET(flag/roundstart_traits))
 		SSquirks.AssignQuirks(humanc, humanc.client)
@@ -188,61 +283,30 @@
 	log_manifest(character.mind.key, character.mind, character, latejoin = TRUE)
 	log_shuttle("[character.mind.key] / [character.mind.name] has joined [joined_ship.name] as [job.title]")
 
-	if(joined_ship.deletion_timer)
-		joined_ship.end_deletion_timer()
-
 	SEND_GLOBAL_SIGNAL(COMSIG_GLOB_CREWMEMBER_JOINED, character, job.title)
 
 	// Grant captain management action if spawning as captain (officer job)
 	if(job.officer && humanc)
-		var/datum/action/innate/captain_management/captain_action = new(humanc, joined_ship)
-		captain_action.Grant(humanc)
+		if(joined_ship.claimed_captain && joined_ship.claimed_captain != humanc.mind)
+			// Somebody already holds command by claim, transfer or election, and that is
+			// exclusive - handing out a second Ship Management button here would give
+			// this officer a panel that refuses every action they press.
+			to_chat(humanc, span_warning("[joined_ship.name] already has a commanding officer. You serve under them unless they hand command over."))
+		else
+			grant_captain_management(humanc, joined_ship)
+			// A real captain's arrival ends any acting command over the ship
+			joined_ship.clear_acting_captain(humanc)
+	else if(humanc)
+		// No captain aboard: the joiner holds acting command until one arrives
+		joined_ship.make_acting_captain(humanc)
 
 	// Show ship memo after spawn (with a small delay so they're fully loaded in)
 	if(joined_ship.memo && humanc)
 		addtimer(CALLBACK(GLOBAL_PROC, GLOBAL_PROC_REF(show_ship_memo_to_player), humanc, joined_ship), 3 SECONDS)
 
-	return TRUE
-
-/**
- * Apply custom slot loadout items to a character
- * This is called after normal job equip when a cryo console has swapped the job to use a custom slot
- */
-/proc/apply_custom_slot_loadout(mob/living/carbon/human/character, list/loadout_list)
-	if(!istype(character) || !length(loadout_list))
-		return FALSE
-
-	var/list/loadout_datums = loadout_list_to_datums(loadout_list)
-	if(!length(loadout_datums))
-		return FALSE
-
-	var/update = NONE
-
-	for(var/datum/loadout_item/item as anything in loadout_datums)
-		// Try to equip each loadout item
-		var/obj/item/spawned = new item.item_path(character.loc)
-		if(spawned)
-			// Try to put in the appropriate slot
-			if(!character.equip_to_appropriate_slot(spawned))
-				// If can't equip to slot, try backpack storage
-				var/stored = FALSE
-				if(character.back?.atom_storage)
-					stored = character.back.atom_storage.attempt_insert(spawned, character, override = TRUE)
-				// If still not stored, put in hands
-				if(!stored)
-					character.put_in_hands(spawned)
-
-			// Handle any special on_equip behavior
-			update |= item.on_equip_item(
-				equipped_item = spawned,
-				preference_source = character.client?.prefs,
-				preference_list = loadout_list,
-				equipper = character,
-				visuals_only = FALSE,
-			)
-
-	if(update)
-		character.update_clothing(update)
+	// First spawn of the round gets the orientation briefing, a beat after the
+	// memo (voidcrew/modules/onboarding/orientation.dm)
+	try_show_orientation_briefing(character)
 
 	return TRUE
 

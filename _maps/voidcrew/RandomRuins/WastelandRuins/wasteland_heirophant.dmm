@@ -3,28 +3,36 @@
 /turf/closed/indestructible/riveted/hierophant,
 /area/ruin/unpowered/hierophant)
 "b" = (
-/turf/open/indestructible/hierophant,
+/turf/open/indestructible/hierophant/wasteland,
 /area/ruin/unpowered/hierophant)
 "c" = (
 /obj/effect/light_emitter{
 	set_cap = 3;
 	set_luminosity = 5
 	},
-/turf/open/indestructible/hierophant,
+/turf/open/indestructible/hierophant/wasteland,
 /area/ruin/unpowered/hierophant)
 "d" = (
 /mob/living/simple_animal/hostile/megafauna/hierophant,
-/turf/open/indestructible/hierophant,
+/turf/open/indestructible/hierophant/wasteland,
 /area/ruin/unpowered/hierophant)
 "e" = (
-/turf/open/indestructible/hierophant/two,
+/turf/open/indestructible/hierophant/two/wasteland,
 /area/ruin/unpowered/hierophant)
 "f" = (
 /obj/effect/light_emitter{
 	set_cap = 3;
 	set_luminosity = 5
 	},
-/turf/open/indestructible/hierophant/two,
+/turf/open/indestructible/hierophant/two/wasteland,
+/area/ruin/unpowered/hierophant)
+"g" = (
+/obj/effect/zone_mobs/undead,
+/turf/open/floor/plating/rust/rockplanet,
+/area/ruin/unpowered/hierophant)
+"h" = (
+/obj/structure/closet/crate/zone_loot/occult,
+/turf/open/floor/plating/rust/rockplanet,
 /area/ruin/unpowered/hierophant)
 "m" = (
 /turf/open/misc/wasteland/lit,
@@ -226,7 +234,7 @@ r
 "}
 (8,1,1) = {"
 X
-r
+g
 r
 r
 K
@@ -371,7 +379,7 @@ b
 b
 r
 r
-r
+g
 m
 "}
 (14,1,1) = {"
@@ -445,7 +453,7 @@ e
 c
 c
 b
-r
+h
 r
 m
 "}
@@ -471,7 +479,7 @@ b
 b
 b
 r
-r
+g
 m
 "}
 (18,1,1) = {"
