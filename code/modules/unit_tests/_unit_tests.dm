@@ -360,6 +360,7 @@
 #include "voidcrew_loot.dm"
 #include "voidcrew_map_packing.dm"
 #include "voidcrew_planetary_factions.dm"
+#include "voidcrew_planet_cleanup.dm"
 #include "voidcrew_missions.dm"
 #include "voidcrew_mining_input.dm"
 #include "voidcrew_mission_gps.dm"
